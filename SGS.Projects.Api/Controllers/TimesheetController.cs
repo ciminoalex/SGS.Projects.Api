@@ -1,0 +1,188 @@
+using Microsoft.AspNetCore.Mvc;
+using SGS.Projects.Api.Models;
+using SGS.Projects.Api.Services;
+
+namespace SGS.Projects.Api.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class TimesheetController : ControllerBase
+    {
+        private readonly IHanaOdbcService _hanaOdbcService;
+        private readonly ISapB1ServiceLayerService _sapB1Service;
+        private readonly ILogger<TimesheetController> _logger;
+
+        public TimesheetController(
+            IHanaOdbcService hanaOdbcService,
+            ISapB1ServiceLayerService sapB1Service,
+            ILogger<TimesheetController> logger)
+        {
+            _hanaOdbcService = hanaOdbcService;
+            _sapB1Service = sapB1Service;
+            _logger = logger;
+        }
+
+        /// <summary>
+        /// Ottiene tutti i timesheet dal database SAP HANA
+        /// </summary>
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheets()
+        {
+            try
+            {
+                var timesheets = await _hanaOdbcService.GetTimesheetsAsync();
+                return Ok(timesheets);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving timesheets");
+                return StatusCode(500, "Errore interno del server durante il recupero dei timesheet");
+            }
+        }
+
+        /// <summary>
+        /// Ottiene un timesheet specifico per DocEntry dal database SAP HANA
+        /// </summary>
+        [HttpGet("{docEntry}")]
+        public async Task<ActionResult<Timesheet>> GetTimesheet(int docEntry)
+        {
+            try
+            {
+                var timesheet = await _hanaOdbcService.GetTimesheetByIdAsync(docEntry);
+                
+                if (timesheet == null)
+                    return NotFound($"Timesheet con DocEntry {docEntry} non trovato");
+                
+                return Ok(timesheet);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving timesheet with DocEntry {DocEntry}", docEntry);
+                return StatusCode(500, "Errore interno del server durante il recupero del timesheet");
+            }
+        }
+
+        /// <summary>
+        /// Ottiene i timesheet per dipendente dal database SAP HANA
+        /// </summary>
+        [HttpGet("employee/{employeeId}")]
+        public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheetsByEmployee(string employeeId)
+        {
+            try
+            {
+                var timesheets = await _hanaOdbcService.GetTimesheetsByEmployeeAsync(employeeId);
+                return Ok(timesheets);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving timesheets for employee {EmployeeId}", employeeId);
+                return StatusCode(500, "Errore interno del server durante il recupero dei timesheet per dipendente");
+            }
+        }
+
+        /// <summary>
+        /// Ottiene i timesheet per progetto dal database SAP HANA
+        /// </summary>
+        [HttpGet("project/{projectId}")]
+        public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheetsByProject(string projectId)
+        {
+            try
+            {
+                var timesheets = await _hanaOdbcService.GetTimesheetsByProjectAsync(projectId);
+                return Ok(timesheets);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving timesheets for project {ProjectId}", projectId);
+                return StatusCode(500, "Errore interno del server durante il recupero dei timesheet per progetto");
+            }
+        }
+
+        /// <summary>
+        /// Ottiene i timesheet per intervallo di date dal database SAP HANA
+        /// </summary>
+        [HttpGet("daterange")]
+        public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheetsByDateRange(
+            [FromQuery] DateTime startDate, 
+            [FromQuery] DateTime endDate)
+        {
+            try
+            {
+                var timesheets = await _hanaOdbcService.GetTimesheetsByDateRangeAsync(startDate, endDate);
+                return Ok(timesheets);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving timesheets for date range {StartDate} to {EndDate}", startDate, endDate);
+                return StatusCode(500, "Errore interno del server durante il recupero dei timesheet per intervallo di date");
+            }
+        }
+
+        /// <summary>
+        /// Crea un nuovo timesheet tramite SAP Business One Service Layer
+        /// </summary>
+        [HttpPost]
+        public async Task<ActionResult<Timesheet>> CreateTimesheet([FromBody] TimesheetCreateRequest request)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                var timesheet = await _sapB1Service.CreateTimesheetAsync(request);
+                return CreatedAtAction(nameof(GetTimesheet), new { docEntry = timesheet.DocEntry }, timesheet);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating timesheet");
+                return StatusCode(500, "Errore interno del server durante la creazione del timesheet");
+            }
+        }
+
+        /// <summary>
+        /// Aggiorna un timesheet esistente tramite SAP Business One Service Layer
+        /// </summary>
+        [HttpPut("{docEntry}")]
+        public async Task<ActionResult<Timesheet>> UpdateTimesheet(int docEntry, [FromBody] TimesheetUpdateRequest request)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                if (request.DocEntry != docEntry)
+                    return BadRequest("Il DocEntry nell'URL non corrisponde a quello nel body della richiesta");
+
+                var timesheet = await _sapB1Service.UpdateTimesheetAsync(request);
+                return Ok(timesheet);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating timesheet with DocEntry {DocEntry}", docEntry);
+                return StatusCode(500, "Errore interno del server durante l'aggiornamento del timesheet");
+            }
+        }
+
+        /// <summary>
+        /// Elimina un timesheet tramite SAP Business One Service Layer
+        /// </summary>
+        [HttpDelete("{docEntry}")]
+        public async Task<ActionResult> DeleteTimesheet(int docEntry)
+        {
+            try
+            {
+                var result = await _sapB1Service.DeleteTimesheetAsync(docEntry);
+                
+                if (result)
+                    return NoContent();
+                else
+                    return NotFound($"Timesheet con DocEntry {docEntry} non trovato o non eliminabile");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting timesheet with DocEntry {DocEntry}", docEntry);
+                return StatusCode(500, "Errore interno del server durante l'eliminazione del timesheet");
+            }
+        }
+    }
+}

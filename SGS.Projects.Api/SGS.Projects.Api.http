@@ -1,0 +1,70 @@
+### SGS Projects API - Timesheet Management
+
+### 1. Ottieni tutti i timesheet (ODBC SAP HANA)
+GET {{baseUrl}}/api/timesheet
+Accept: application/json
+
+###
+
+### 2. Ottieni un timesheet specifico (ODBC SAP HANA)
+GET {{baseUrl}}/api/timesheet/123
+Accept: application/json
+
+###
+
+### 3. Ottieni timesheet per dipendente (ODBC SAP HANA)
+GET {{baseUrl}}/api/timesheet/employee/EMP001
+Accept: application/json
+
+###
+
+### 4. Ottieni timesheet per progetto (ODBC SAP HANA)
+GET {{baseUrl}}/api/timesheet/project/PRJ001
+Accept: application/json
+
+###
+
+### 5. Ottieni timesheet per intervallo di date (ODBC SAP HANA)
+GET {{baseUrl}}/api/timesheet/daterange?startDate=2024-01-01&endDate=2024-01-31
+Accept: application/json
+
+###
+
+### 6. Crea un nuovo timesheet (SAP B1 Service Layer)
+POST {{baseUrl}}/api/timesheet
+Content-Type: application/json
+
+{
+  "date": "2024-01-15T00:00:00",
+  "employeeId": "EMP001",
+  "projectId": "PRJ001",
+  "activityId": "ACT001",
+  "hours": 8.5,
+  "description": "Sviluppo funzionalità API"
+}
+
+###
+
+### 7. Aggiorna un timesheet esistente (SAP B1 Service Layer)
+PUT {{baseUrl}}/api/timesheet/123
+Content-Type: application/json
+
+{
+  "docEntry": 123,
+  "date": "2024-01-15T00:00:00",
+  "employeeId": "EMP001",
+  "projectId": "PRJ001",
+  "activityId": "ACT001",
+  "hours": 9.0,
+  "description": "Sviluppo funzionalità API - Aggiornato"
+}
+
+###
+
+### 8. Elimina un timesheet (SAP B1 Service Layer)
+DELETE {{baseUrl}}/api/timesheet/123
+
+###
+
+### Variabili di ambiente
+@baseUrl = https://localhost:7001
