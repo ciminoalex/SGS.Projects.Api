@@ -10,6 +10,17 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 builder.Services.AddSwaggerGen();
 
+// Add CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAngularApp", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 // Register custom services
 builder.Services.AddScoped<IDbOdbcService, DbOdbcService>();
 builder.Services.AddScoped<ISapB1ServiceLayerService, SapB1ServiceLayerService>();
@@ -40,6 +51,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Enable CORS
+app.UseCors("AllowAngularApp");
+
 app.UseAuthorization();
 app.MapControllers();
 
