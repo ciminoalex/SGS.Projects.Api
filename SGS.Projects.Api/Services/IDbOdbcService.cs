@@ -2,7 +2,7 @@ using SGS.Projects.Api.Models;
 
 namespace SGS.Projects.Api.Services
 {
-    public interface IHanaOdbcService
+    public interface IDbOdbcService
     {
         Task<IEnumerable<Timesheet>> GetTimesheetsAsync();
         Task<Timesheet?> GetTimesheetByIdAsync(int docEntry);
@@ -10,5 +10,6 @@ namespace SGS.Projects.Api.Services
         Task<IEnumerable<Timesheet>> GetTimesheetsByProjectAsync(string projectId);
         Task<IEnumerable<Timesheet>> GetTimesheetsByDateRangeAsync(DateTime startDate, DateTime endDate);
         Task<IEnumerable<Timesheet>> GetTimesheetsByEmployeeAndDateRangeAsync(string employeeId, DateTime startDate, DateTime endDate);
+        Task<string> GetNextTimesheetCodeAsync();
     }
 }

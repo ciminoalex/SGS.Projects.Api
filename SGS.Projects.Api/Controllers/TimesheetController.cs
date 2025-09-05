@@ -8,29 +8,29 @@ namespace SGS.Projects.Api.Controllers
     [Route("api/[controller]")]
     public class TimesheetController : ControllerBase
     {
-        private readonly IHanaOdbcService _hanaOdbcService;
+        private readonly IDbOdbcService _dbOdbcService;
         private readonly ISapB1ServiceLayerService _sapB1Service;
         private readonly ILogger<TimesheetController> _logger;
 
         public TimesheetController(
-            IHanaOdbcService hanaOdbcService,
+            IDbOdbcService dbOdbcService,
             ISapB1ServiceLayerService sapB1Service,
             ILogger<TimesheetController> logger)
         {
-            _hanaOdbcService = hanaOdbcService;
+            _dbOdbcService = dbOdbcService;
             _sapB1Service = sapB1Service;
             _logger = logger;
         }
 
         /// <summary>
-        /// Ottiene tutti i timesheet dal database SAP HANA
+        /// Ottiene tutti i timesheet dal database
         /// </summary>
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheets()
         {
             try
             {
-                var timesheets = await _hanaOdbcService.GetTimesheetsAsync();
+                var timesheets = await _dbOdbcService.GetTimesheetsAsync();
                 return Ok(timesheets);
             }
             catch (Exception ex)
@@ -41,14 +41,14 @@ namespace SGS.Projects.Api.Controllers
         }
 
         /// <summary>
-        /// Ottiene un timesheet specifico per DocEntry dal database SAP HANA
+        /// Ottiene un timesheet specifico per DocEntry dal database
         /// </summary>
         [HttpGet("{docEntry}")]
         public async Task<ActionResult<Timesheet>> GetTimesheet(int docEntry)
         {
             try
             {
-                var timesheet = await _hanaOdbcService.GetTimesheetByIdAsync(docEntry);
+                var timesheet = await _dbOdbcService.GetTimesheetByIdAsync(docEntry);
                 
                 if (timesheet == null)
                     return NotFound($"Timesheet con DocEntry {docEntry} non trovato");
@@ -63,14 +63,14 @@ namespace SGS.Projects.Api.Controllers
         }
 
         /// <summary>
-        /// Ottiene i timesheet per dipendente dal database SAP HANA
+        /// Ottiene i timesheet per dipendente dal database
         /// </summary>
         [HttpGet("employee/{employeeId}")]
         public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheetsByEmployee(string employeeId)
         {
             try
             {
-                var timesheets = await _hanaOdbcService.GetTimesheetsByEmployeeAsync(employeeId);
+                var timesheets = await _dbOdbcService.GetTimesheetsByEmployeeAsync(employeeId);
                 return Ok(timesheets);
             }
             catch (Exception ex)
@@ -81,7 +81,7 @@ namespace SGS.Projects.Api.Controllers
         }
 
         /// <summary>
-        /// Ottiene i timesheet per dipendente in un intervallo di date dal database SAP HANA
+        /// Ottiene i timesheet per dipendente in un intervallo di date dal database
         /// </summary>
         [HttpGet("employee/{employeeId}/daterange")]
         public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheetsByEmployeeAndDateRange(
@@ -91,7 +91,7 @@ namespace SGS.Projects.Api.Controllers
         {
             try
             {
-                var timesheets = await _hanaOdbcService.GetTimesheetsByEmployeeAndDateRangeAsync(employeeId, startDate, endDate);
+                var timesheets = await _dbOdbcService.GetTimesheetsByEmployeeAndDateRangeAsync(employeeId, startDate, endDate);
                 return Ok(timesheets);
             }
             catch (Exception ex)
@@ -102,14 +102,14 @@ namespace SGS.Projects.Api.Controllers
         }
 
         /// <summary>
-        /// Ottiene i timesheet per progetto dal database SAP HANA
+        /// Ottiene i timesheet per progetto dal database
         /// </summary>
         [HttpGet("project/{projectId}")]
         public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheetsByProject(string projectId)
         {
             try
             {
-                var timesheets = await _hanaOdbcService.GetTimesheetsByProjectAsync(projectId);
+                var timesheets = await _dbOdbcService.GetTimesheetsByProjectAsync(projectId);
                 return Ok(timesheets);
             }
             catch (Exception ex)
@@ -120,7 +120,7 @@ namespace SGS.Projects.Api.Controllers
         }
 
         /// <summary>
-        /// Ottiene i timesheet per intervallo di date dal database SAP HANA
+        /// Ottiene i timesheet per intervallo di date dal database
         /// </summary>
         [HttpGet("daterange")]
         public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheetsByDateRange(
@@ -129,7 +129,7 @@ namespace SGS.Projects.Api.Controllers
         {
             try
             {
-                var timesheets = await _hanaOdbcService.GetTimesheetsByDateRangeAsync(startDate, endDate);
+                var timesheets = await _dbOdbcService.GetTimesheetsByDateRangeAsync(startDate, endDate);
                 return Ok(timesheets);
             }
             catch (Exception ex)
@@ -187,21 +187,21 @@ namespace SGS.Projects.Api.Controllers
         /// <summary>
         /// Elimina un timesheet tramite SAP Business One Service Layer
         /// </summary>
-        [HttpDelete("{docEntry}")]
-        public async Task<ActionResult> DeleteTimesheet(int docEntry)
+        [HttpDelete("{code}")]
+        public async Task<ActionResult> DeleteTimesheet(string code)
         {
             try
             {
-                var result = await _sapB1Service.DeleteTimesheetAsync(docEntry);
+                var result = await _sapB1Service.DeleteTimesheetAsync(code);
                 
                 if (result)
                     return NoContent();
                 else
-                    return NotFound($"Timesheet con DocEntry {docEntry} non trovato o non eliminabile");
+                    return NotFound($"Timesheet con Code {code} non trovato o non eliminabile");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting timesheet with DocEntry {DocEntry}", docEntry);
+                _logger.LogError(ex, "Error deleting timesheet with Code {code}", code);
                 return StatusCode(500, "Errore interno del server durante l'eliminazione del timesheet");
             }
         }
