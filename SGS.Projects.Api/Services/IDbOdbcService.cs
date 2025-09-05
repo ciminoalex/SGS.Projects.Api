@@ -11,5 +11,13 @@ namespace SGS.Projects.Api.Services
         Task<IEnumerable<Timesheet>> GetTimesheetsByDateRangeAsync(DateTime startDate, DateTime endDate);
         Task<IEnumerable<Timesheet>> GetTimesheetsByEmployeeAndDateRangeAsync(string employeeId, DateTime startDate, DateTime endDate);
         Task<string> GetNextTimesheetCodeAsync();
+
+        // Lookups
+        Task<IEnumerable<CustomerSummary>> GetCustomersAsync();
+        Task<IEnumerable<ContactSummary>> GetContactsByCustomerAsync(string cardCode);
+        Task<IEnumerable<ProjectSummary>> GetProjectsAsync();
+        Task<IEnumerable<ActivitySummary>> GetActivitiesByProjectAsync(string projectCode);
+        Task<IEnumerable<ProjectSummary>> GetProjectsByCustomerAsync(string cardCode);
+        Task<IEnumerable<ResourceSummary>> GetResourcesAsync();
     }
 }

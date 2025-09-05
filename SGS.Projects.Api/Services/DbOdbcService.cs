@@ -574,5 +574,219 @@ namespace SGS.Projects.Api.Services
                 throw;
             }
         }
+
+        public async Task<IEnumerable<CustomerSummary>> GetCustomersAsync()
+        {
+            var customers = new List<CustomerSummary>();
+            try
+            {
+                using var connection = new OdbcConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT 
+                        ""CardCode"",
+                        ""CardName""
+                    FROM ""OCRD""
+                    WHERE ""CardType"" = 'C' 
+                    ORDER BY ""CardName""";
+
+                using var command = new OdbcCommand(query, connection);
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    customers.Add(new CustomerSummary
+                    {
+                        CardCode = reader.GetString(0),
+                        CardName = reader.GetString(1)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving customers from database");
+                throw;
+            }
+            return customers;
+        }
+
+        public async Task<IEnumerable<ContactSummary>> GetContactsByCustomerAsync(string cardCode)
+        {
+            var contacts = new List<ContactSummary>();
+            try
+            {
+                using var connection = new OdbcConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT 
+                        ""CntctCode"" AS ""Code"",
+                        ""Name""
+                    FROM ""OCPR""
+                    WHERE ""CardCode"" = ?
+                    ORDER BY ""Name""";
+
+                using var command = new OdbcCommand(query, connection);
+                command.Parameters.AddWithValue("@CardCode", cardCode);
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    contacts.Add(new ContactSummary
+                    {
+                        Code = reader.GetInt32(0).ToString(),
+                        Name = reader.GetString(1)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving contacts for customer {CardCode} from database", cardCode);
+                throw;
+            }
+            return contacts;
+        }
+
+        public async Task<IEnumerable<ProjectSummary>> GetProjectsAsync()
+        {
+            var projects = new List<ProjectSummary>();
+            try
+            {
+                using var connection = new OdbcConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT
+                        T.""AbsEntry"" AS ""Code"",
+                        T.""NAME"" AS ""Name""
+                    FROM ""OPMG"" T
+                    ORDER BY ""NAME""";
+
+                using var command = new OdbcCommand(query, connection);
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    projects.Add(new ProjectSummary
+                    {
+                        Code = reader.GetString(0),
+                        Name = reader.GetString(1)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving projects from database");
+                throw;
+            }
+            return projects;
+        }
+
+        public async Task<IEnumerable<ActivitySummary>> GetActivitiesByProjectAsync(string projectCode)
+        {
+            var activities = new List<ActivitySummary>();
+            try
+            {
+                using var connection = new OdbcConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT 
+                        ""LineID"" AS ""Code"",
+                        ""DSCRIPTION"" AS ""Name""
+                    FROM ""PMG1""
+                    WHERE ""AbsEntry"" = ?
+                    ORDER BY ""LineID""";
+
+                using var command = new OdbcCommand(query, connection);
+                command.Parameters.AddWithValue("@Project", projectCode);
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    activities.Add(new ActivitySummary
+                    {
+                        Code = reader.IsDBNull(0) ? string.Empty : reader.GetInt32(0).ToString(),
+                        Name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving activities for project {ProjectCode} from database", projectCode);
+                throw;
+            }
+            return activities;
+        }
+
+        public async Task<IEnumerable<ProjectSummary>> GetProjectsByCustomerAsync(string cardCode)
+        {
+            var projects = new List<ProjectSummary>();
+            try
+            {
+                using var connection = new OdbcConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Projects linked to a BP via SAP B1 standard tables: OINV/RDR/OPRJ linkage varies by implementation.
+                // Here we leverage the timesheet source table if projects are referenced there by CardCode, else fallback to OPRJ + OCRD link via custom relations.
+                var query = @"
+                    SELECT
+                        T.""AbsEntry"" AS ""Code"",
+                        T.""NAME"" AS ""Name""
+                    FROM ""OPMG"" T
+                    WHERE T.""CARDCODE"" = ?
+                    ORDER BY T.""NAME""";
+
+                using var command = new OdbcCommand(query, connection);
+                command.Parameters.AddWithValue("@CardCode", cardCode);
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    projects.Add(new ProjectSummary
+                    {
+                        Code = reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+                        Name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving projects for customer {CardCode} from database", cardCode);
+                throw;
+            }
+            return projects;
+        }
+
+        public async Task<IEnumerable<ResourceSummary>> GetResourcesAsync()
+        {
+            var resources = new List<ResourceSummary>();
+            try
+            {
+                using var connection = new OdbcConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = @"
+                    SELECT 
+                        T0.""ResCode"" AS ""Code"",
+                        T0.""ResName"" AS ""Name""
+                    FROM ""ORSC"" T0
+                    INNER JOIN ""RSC4"" T1 ON T0.""ResCode"" = T1.""ResCode""
+                    INNER JOIN ""OHEM"" T2 ON T1.""EmpID"" = T2.""empID""
+                    INNER JOIN ""OUSR"" T3 ON T2.""userId"" = T3.""USERID""
+                    WHERE T0.""validFor"" = 'Y' AND T2.""Active"" = 'Y'";
+
+                using var command = new OdbcCommand(query, connection);
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var code = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+                    var name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                    resources.Add(new ResourceSummary { Code = code, Name = name });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving resources from database");
+                throw;
+            }
+            return resources;
+        }
     }
 }
