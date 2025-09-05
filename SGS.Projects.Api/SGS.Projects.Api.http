@@ -18,6 +18,12 @@ Accept: application/json
 
 ###
 
+### 3.1. Ottieni timesheet per dipendente in intervallo di date (ODBC SAP HANA)
+GET {{baseUrl}}/api/timesheet/employee/EMP001/daterange?startDate=2024-01-01&endDate=2024-01-31
+Accept: application/json
+
+###
+
 ### 4. Ottieni timesheet per progetto (ODBC SAP HANA)
 GET {{baseUrl}}/api/timesheet/project/PRJ001
 Accept: application/json
@@ -40,7 +46,33 @@ Content-Type: application/json
   "projectId": "PRJ001",
   "activityId": "ACT001",
   "hours": 8.5,
-  "description": "Sviluppo funzionalità API"
+  "description": "Sviluppo funzionalità API",
+  "resId": "EMP001",
+  "cardCode": "C001",
+  "cardName": "Azienda Test",
+  "refId": "REF001",
+  "refData": "Dati referente",
+  "project": "PRJ001",
+  "projectName": "Progetto Test",
+  "subProject": "SUB001",
+  "activity": "ACT001",
+  "subActivity": "SUBACT001",
+  "activityName": "Attività Test",
+  "timeStart": "09:00:00",
+  "timeEnd": "17:30:00",
+  "timePa": "01:00:00",
+  "timeNF": "00:30:00",
+  "timeNrPa": 8.5,
+  "timeNrNF": 0.5,
+  "timeNrTot": 9.0,
+  "timeNrNet": 8.0,
+  "price": 50.00,
+  "lineTotal": 400.00,
+  "descExt": "Descrizione esterna",
+  "descInt": "Descrizione interna",
+  "itemCode": "ITEM001",
+  "status": "Draft",
+  "approver": "APP001"
 }
 
 ###
@@ -56,7 +88,33 @@ Content-Type: application/json
   "projectId": "PRJ001",
   "activityId": "ACT001",
   "hours": 9.0,
-  "description": "Sviluppo funzionalità API - Aggiornato"
+  "description": "Sviluppo funzionalità API - Aggiornato",
+  "resId": "EMP001",
+  "cardCode": "C001",
+  "cardName": "Azienda Test",
+  "refId": "REF001",
+  "refData": "Dati referente aggiornati",
+  "project": "PRJ001",
+  "projectName": "Progetto Test",
+  "subProject": "SUB001",
+  "activity": "ACT001",
+  "subActivity": "SUBACT001",
+  "activityName": "Attività Test",
+  "timeStart": "09:00:00",
+  "timeEnd": "18:00:00",
+  "timePa": "01:00:00",
+  "timeNF": "00:00:00",
+  "timeNrPa": 9.0,
+  "timeNrNF": 0.0,
+  "timeNrTot": 9.0,
+  "timeNrNet": 9.0,
+  "price": 50.00,
+  "lineTotal": 450.00,
+  "descExt": "Descrizione esterna aggiornata",
+  "descInt": "Descrizione interna aggiornata",
+  "itemCode": "ITEM001",
+  "status": "Approved",
+  "approver": "APP001"
 }
 
 ###

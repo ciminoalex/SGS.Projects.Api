@@ -9,5 +9,6 @@ namespace SGS.Projects.Api.Services
         Task<IEnumerable<Timesheet>> GetTimesheetsByEmployeeAsync(string employeeId);
         Task<IEnumerable<Timesheet>> GetTimesheetsByProjectAsync(string projectId);
         Task<IEnumerable<Timesheet>> GetTimesheetsByDateRangeAsync(DateTime startDate, DateTime endDate);
+        Task<IEnumerable<Timesheet>> GetTimesheetsByEmployeeAndDateRangeAsync(string employeeId, DateTime startDate, DateTime endDate);
     }
 }

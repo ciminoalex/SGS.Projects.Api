@@ -81,6 +81,27 @@ namespace SGS.Projects.Api.Controllers
         }
 
         /// <summary>
+        /// Ottiene i timesheet per dipendente in un intervallo di date dal database SAP HANA
+        /// </summary>
+        [HttpGet("employee/{employeeId}/daterange")]
+        public async Task<ActionResult<IEnumerable<Timesheet>>> GetTimesheetsByEmployeeAndDateRange(
+            string employeeId,
+            [FromQuery] DateTime startDate, 
+            [FromQuery] DateTime endDate)
+        {
+            try
+            {
+                var timesheets = await _hanaOdbcService.GetTimesheetsByEmployeeAndDateRangeAsync(employeeId, startDate, endDate);
+                return Ok(timesheets);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving timesheets for employee {EmployeeId} in date range {StartDate} to {EndDate}", employeeId, startDate, endDate);
+                return StatusCode(500, "Errore interno del server durante il recupero dei timesheet per dipendente e intervallo di date");
+            }
+        }
+
+        /// <summary>
         /// Ottiene i timesheet per progetto dal database SAP HANA
         /// </summary>
         [HttpGet("project/{projectId}")]
