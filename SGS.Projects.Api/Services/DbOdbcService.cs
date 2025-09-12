@@ -6,12 +6,18 @@ namespace SGS.Projects.Api.Services
     public class DbOdbcService : IDbOdbcService
     {
         private readonly string _connectionString;
+        private readonly string _schema;
         private readonly ILogger<DbOdbcService> _logger;
 
         public DbOdbcService(IConfiguration configuration, ILogger<DbOdbcService> logger)
         {
-            _connectionString = configuration.GetConnectionString("SqlServer") 
-                ?? throw new ArgumentNullException(nameof(configuration), "SqlServer connection string not found");
+            _connectionString = configuration.GetConnectionString("DefaultDatabase") 
+                ?? throw new ArgumentNullException(nameof(configuration), "DefaultDatabase connection string not found");
+
+            _schema = configuration["SapB1:CompanyDB"]
+                ?? throw new ArgumentNullException(nameof(configuration), "Schema not defined");
+
+
             _logger = logger;
         }
 
@@ -24,7 +30,7 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
                 
-                var query = @"
+                var query = $@"
                     SELECT 
                         ""DocEntry"",
                         ""Code"",
@@ -52,7 +58,7 @@ namespace SGS.Projects.Api.Services
                         ""U_DescExt"" AS ""DescExt"",
                         ""U_DescInt"" AS ""DescInt"",
                         ""U_Status"" AS ""Status""
-                    FROM ""@SGS_PRJ_OTMS""
+                    FROM ""{_schema}"".""@SGS_PRJ_OTMS""
                     ORDER BY ""U_Date"" DESC";
                 
                 using var command = new OdbcCommand(query, connection);
@@ -107,7 +113,7 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
                 
-                var query = @"
+                var query = $@"
                     SELECT 
                         ""DocEntry"",
                         ""Code"",
@@ -135,7 +141,7 @@ namespace SGS.Projects.Api.Services
                         ""U_DescExt"" AS ""DescExt"",
                         ""U_DescInt"" AS ""DescInt"",
                         ""U_Status"" AS ""Status""
-                    FROM ""@SGS_PRJ_OTMS""
+                    FROM ""{_schema}"".""@SGS_PRJ_OTMS""
                     WHERE ""DocEntry"" = ?";
                 
                 using var command = new OdbcCommand(query, connection);
@@ -194,7 +200,7 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
                 
-                var query = @"
+                var query = $@"
                     SELECT 
                         ""DocEntry"",
                         ""Code"",
@@ -222,7 +228,7 @@ namespace SGS.Projects.Api.Services
                         ""U_DescExt"" AS ""DescExt"",
                         ""U_DescInt"" AS ""DescInt"",
                         ""U_Status"" AS ""Status""
-                    FROM ""@SGS_PRJ_OTMS""
+                    FROM ""{_schema}"".""@SGS_PRJ_OTMS""
                     WHERE ""U_ResId"" = ?
                     ORDER BY ""U_Date"" DESC";
                 
@@ -282,7 +288,7 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
                 
-                var query = @"
+                var query = $@"
                     SELECT 
                         ""DocEntry"",
                         ""Code"",
@@ -310,7 +316,7 @@ namespace SGS.Projects.Api.Services
                         ""U_DescExt"" AS ""DescExt"",
                         ""U_DescInt"" AS ""DescInt"",
                         ""U_Status"" AS ""Status""
-                    FROM ""@SGS_PRJ_OTMS""
+                    FROM ""{_schema}"".""@SGS_PRJ_OTMS""
                     WHERE ""U_Project"" = ?
                     ORDER BY ""U_Date"" DESC";
                 
@@ -370,7 +376,7 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
                 
-                var query = @"
+                var query = $@"
                     SELECT 
                         ""DocEntry"",
                         ""Code"",
@@ -398,7 +404,7 @@ namespace SGS.Projects.Api.Services
                         ""U_DescExt"" AS ""DescExt"",
                         ""U_DescInt"" AS ""DescInt"",
                         ""U_Status"" AS ""Status""
-                    FROM ""@SGS_PRJ_OTMS""
+                    FROM ""{_schema}"".""@SGS_PRJ_OTMS""
                     WHERE ""U_Date"" BETWEEN ? AND ?
                     ORDER BY ""U_Date"" DESC";
                 
@@ -459,7 +465,7 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
                 
-                var query = @"
+                var query = $@"
                     SELECT 
                         ""DocEntry"",
                         ""Code"",
@@ -487,7 +493,7 @@ namespace SGS.Projects.Api.Services
                         ""U_DescExt"" AS ""DescExt"",
                         ""U_DescInt"" AS ""DescInt"",
                         ""U_Status"" AS ""Status""
-                    FROM ""@SGS_PRJ_OTMS""
+                    FROM ""{_schema}"".""@SGS_PRJ_OTMS""
                     WHERE ""U_ResId"" = ? AND ""U_Date"" BETWEEN ? AND ?
                     ORDER BY ""U_Date"" DESC";
                 
@@ -517,10 +523,10 @@ namespace SGS.Projects.Api.Services
                         SubActivity = reader.IsDBNull(12) ? null : reader.GetString(12),
                         ActivityName = reader.IsDBNull(13) ? null : reader.GetString(13),
                         Date = reader.GetDateTime(14),
-                        TimeStart = reader.IsDBNull(15) ? null : (int)reader.GetInt32(15),
-                        TimeEnd = reader.IsDBNull(16) ? null : (int)reader.GetInt32(16),
-                        TimePa = reader.IsDBNull(17) ? null : (int)reader.GetInt32(17),
-                        TimeNF = reader.IsDBNull(18) ? null : (int)reader.GetInt32(18),
+                        TimeStart = reader.IsDBNull(15) ? null : (int)reader.GetInt16(15),
+                        TimeEnd = reader.IsDBNull(16) ? null : (int)reader.GetInt16(16),
+                        TimePa = reader.IsDBNull(17) ? null : (int)reader.GetInt16(17),
+                        TimeNF = reader.IsDBNull(18) ? null : (int)reader.GetInt16(18),
                         TimeNrPa = reader.IsDBNull(19) ? null : reader.GetDecimal(19),
                         TimeNrNF = reader.IsDBNull(20) ? null : reader.GetDecimal(20),
                         TimeNrTot = reader.IsDBNull(21) ? null : reader.GetDecimal(21),
@@ -548,13 +554,13 @@ namespace SGS.Projects.Api.Services
                 await connection.OpenAsync();
                 
                 // Query to get the maximum Code value converted to numeric, then add 1
-                var query = @"
+                var query = $@"
                     SELECT 
                         CASE 
                             WHEN MAX(CAST(""Code"" AS INTEGER)) IS NULL THEN 1
                             ELSE MAX(CAST(""Code"" AS INTEGER)) + 1
                         END
-                    FROM ""@SGS_PRJ_OTMS""
+                    FROM ""{_schema}"".""@SGS_PRJ_OTMS""
                     WHERE ""Code"" IS NOT NULL 
                     AND ""Code"" != ''";
                 
@@ -583,11 +589,11 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
+                var query = $@"
                     SELECT 
                         ""CardCode"",
                         ""CardName""
-                    FROM ""OCRD""
+                    FROM ""{_schema}"".""OCRD""
                     WHERE ""CardType"" = 'C' 
                     ORDER BY ""CardName""";
 
@@ -597,8 +603,8 @@ namespace SGS.Projects.Api.Services
                 {
                     customers.Add(new CustomerSummary
                     {
-                        CardCode = reader.GetString(0),
-                        CardName = reader.GetString(1)
+                        CardCode = reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+                        CardName = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
                     });
                 }
             }
@@ -618,11 +624,11 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
+                var query = $@"
                     SELECT 
                         ""CntctCode"" AS ""Code"",
                         ""Name""
-                    FROM ""OCPR""
+                    FROM ""{_schema}"".""OCPR""
                     WHERE ""CardCode"" = ?
                     ORDER BY ""Name""";
 
@@ -633,8 +639,8 @@ namespace SGS.Projects.Api.Services
                 {
                     contacts.Add(new ContactSummary
                     {
-                        Code = reader.GetInt32(0).ToString(),
-                        Name = reader.GetString(1)
+                        Code = reader.IsDBNull(0) ? string.Empty : reader.GetInt32(0).ToString(),
+                        Name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
                     });
                 }
             }
@@ -654,11 +660,11 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
+                var query = $@"
                     SELECT
                         T.""AbsEntry"" AS ""Code"",
                         T.""NAME"" AS ""Name""
-                    FROM ""OPMG"" T
+                    FROM ""{_schema}"".""OPMG"" T
                     ORDER BY ""NAME""";
 
                 using var command = new OdbcCommand(query, connection);
@@ -667,8 +673,8 @@ namespace SGS.Projects.Api.Services
                 {
                     projects.Add(new ProjectSummary
                     {
-                        Code = reader.GetString(0),
-                        Name = reader.GetString(1)
+                        Code = reader.IsDBNull(0) ? string.Empty : reader.GetInt32(0).ToString(),
+                        Name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
                     });
                 }
             }
@@ -688,11 +694,13 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
+                var query = $@"
                     SELECT 
                         ""LineID"" AS ""Code"",
-                        ""DSCRIPTION"" AS ""Name""
-                    FROM ""PMG1""
+                        ""DSCRIPTION"" AS ""Name"",
+                        ""U_SGS_PRJ_UnitMsr"",
+                        ""U_SGS_PRJ_Price""
+                    FROM ""{_schema}"".""PMG1""
                     WHERE ""AbsEntry"" = ?
                     ORDER BY ""LineID""";
 
@@ -704,7 +712,9 @@ namespace SGS.Projects.Api.Services
                     activities.Add(new ActivitySummary
                     {
                         Code = reader.IsDBNull(0) ? string.Empty : reader.GetInt32(0).ToString(),
-                        Name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
+                        Name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                        UoM = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                        Price = reader.IsDBNull(3) ? 0 : reader.GetDecimal(3),
                     });
                 }
             }
@@ -726,11 +736,11 @@ namespace SGS.Projects.Api.Services
 
                 // Projects linked to a BP via SAP B1 standard tables: OINV/RDR/OPRJ linkage varies by implementation.
                 // Here we leverage the timesheet source table if projects are referenced there by CardCode, else fallback to OPRJ + OCRD link via custom relations.
-                var query = @"
+                var query = $@"
                     SELECT
                         T.""AbsEntry"" AS ""Code"",
                         T.""NAME"" AS ""Name""
-                    FROM ""OPMG"" T
+                    FROM ""{_schema}"".""OPMG"" T
                     WHERE T.""CARDCODE"" = ?
                     ORDER BY T.""NAME""";
 
@@ -741,7 +751,7 @@ namespace SGS.Projects.Api.Services
                 {
                     projects.Add(new ProjectSummary
                     {
-                        Code = reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+                        Code = reader.IsDBNull(0) ? string.Empty : reader.GetInt32(0).ToString(),
                         Name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1)
                     });
                 }
@@ -762,15 +772,16 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
 
-                var query = @"
+                var query = $@"
                     SELECT 
                         T0.""ResCode"" AS ""Code"",
                         T0.""ResName"" AS ""Name""
-                    FROM ""ORSC"" T0
-                    INNER JOIN ""RSC4"" T1 ON T0.""ResCode"" = T1.""ResCode""
-                    INNER JOIN ""OHEM"" T2 ON T1.""EmpID"" = T2.""empID""
-                    INNER JOIN ""OUSR"" T3 ON T2.""userId"" = T3.""USERID""
-                    WHERE T0.""validFor"" = 'Y' AND T2.""Active"" = 'Y'";
+                    FROM ""{_schema}"".""ORSC"" T0
+                    INNER JOIN ""{_schema}"".""RSC4"" T1 ON T0.""ResCode"" = T1.""ResCode""
+                    INNER JOIN ""{_schema}"".""OHEM"" T2 ON T1.""EmpID"" = T2.""empID""
+                    INNER JOIN ""{_schema}"".""OUSR"" T3 ON T2.""userId"" = T3.""USERID""
+                    WHERE T0.""validFor"" = 'Y' AND T2.""Active"" = 'Y'
+                    ORDER BY T0.""ResName""";
 
                 using var command = new OdbcCommand(query, connection);
                 using var reader = await command.ExecuteReaderAsync();
@@ -787,6 +798,52 @@ namespace SGS.Projects.Api.Services
                 throw;
             }
             return resources;
+        }
+
+        public async Task<ActivityTimeTotal?> GetActivityTimeTotAsync(string projectId, string activityId)
+        {
+            try
+            {
+                using var connection = new OdbcConnection(_connectionString);
+                await connection.OpenAsync();
+
+                var query = $@"
+                    SELECT 
+                        T0.""U_Project"", 
+                        T0.""U_ActivityId"", 
+                        SUM(T0.""U_TimeNrTot"") AS ""TimeTot""
+                    FROM ""{_schema}"".""@SGS_PRJ_OTMS"" T0
+                    WHERE T0.""U_Project"" = ? AND T0.""U_ActivityId"" = ?
+                    GROUP BY 
+                        T0.""U_Project"", T0.""U_ActivityId""";
+
+                using var command = new OdbcCommand(query, connection);
+                command.Parameters.AddWithValue("@ProjectId", projectId);
+                command.Parameters.AddWithValue("@ActivityId", activityId);
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    return new ActivityTimeTotal
+                    {
+                        Project = reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+                        ActivityId = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                        TimeTot = reader.IsDBNull(2) ? 0 : reader.GetDecimal(2)
+                    };
+                }
+
+                return new ActivityTimeTotal
+                {
+                    Project = projectId,
+                    ActivityId = activityId,
+                    TimeTot = 0
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving activity time total for project {ProjectId} and activity {ActivityId}", projectId, activityId);
+                throw;
+            }
         }
     }
 }

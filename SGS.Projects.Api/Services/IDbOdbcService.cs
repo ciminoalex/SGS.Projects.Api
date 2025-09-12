@@ -19,5 +19,8 @@ namespace SGS.Projects.Api.Services
         Task<IEnumerable<ActivitySummary>> GetActivitiesByProjectAsync(string projectCode);
         Task<IEnumerable<ProjectSummary>> GetProjectsByCustomerAsync(string cardCode);
         Task<IEnumerable<ResourceSummary>> GetResourcesAsync();
+
+        // Aggregations
+        Task<ActivityTimeTotal?> GetActivityTimeTotAsync(string projectId, string activityId);
     }
 }

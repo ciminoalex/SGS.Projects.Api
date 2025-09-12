@@ -140,6 +140,28 @@ namespace SGS.Projects.Api.Controllers
         }
 
         /// <summary>
+        /// Ottiene il totale delle ore per progetto e attività
+        /// </summary>
+        [HttpGet("activity-time-tot")]
+        public async Task<ActionResult<ActivityTimeTotal>> GetActivityTimeTot(
+            [FromQuery] string projectId,
+            [FromQuery] string activityId)
+        {
+            try
+            {
+                var result = await _dbOdbcService.GetActivityTimeTotAsync(projectId, activityId);
+                if (result == null)
+                    return NotFound();
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving activity time total for project {ProjectId} and activity {ActivityId}", projectId, activityId);
+                return StatusCode(500, "Errore interno del server durante il recupero del totale ore per attività");
+            }
+        }
+
+        /// <summary>
         /// Crea un nuovo timesheet tramite SAP Business One Service Layer
         /// </summary>
         [HttpPost]

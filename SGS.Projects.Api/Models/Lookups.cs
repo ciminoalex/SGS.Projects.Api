@@ -22,12 +22,30 @@ namespace SGS.Projects.Api.Models
     {
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public string UoM { get; set; } = string.Empty;
+        public decimal Price { get; set; } = 0;
+        public decimal UoMPrice { get { 
+                switch (UoM) 
+                { 
+                    case "GG": return Price / 8;
+                    case "HH": return Price;
+                    default: return 0;
+                }
+            } 
+        }
     }
 
     public class ResourceSummary
     {
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+    }
+
+    public class ActivityTimeTotal
+    {
+        public string Project { get; set; } = string.Empty;
+        public string ActivityId { get; set; } = string.Empty;
+        public decimal TimeTot { get; set; }
     }
 }
 

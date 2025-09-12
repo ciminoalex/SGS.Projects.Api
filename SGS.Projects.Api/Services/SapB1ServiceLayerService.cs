@@ -210,7 +210,7 @@ namespace SGS.Projects.Api.Services
                 {
                     Code = nextCode,
                     U_Date = request.Date.ToString("yyyy-MM-dd"),
-                    U_ResId = int.Parse(request.ResId).ToString("000"),
+                    U_ResId = request.ResId,
                     U_CardCode = request.CardCode,
                     U_CardName = request.CardName,
                     U_RefId = request.RefId,
@@ -229,7 +229,7 @@ namespace SGS.Projects.Api.Services
                     U_TimeNrPa = request.TimeNrPa,
                     U_TimeNrNF = request.TimeNrNF,
                     U_TimeNrTot = request.TimeNrTot,
-                    U_TimeNrNet = request.TimeNrNet,
+                    U_TimeNrNet = request.TimeNrTot,
                     U_DescExt = request.DescExt,
                     U_DescInt = request.DescInt,
                     U_Status = "Inserito"
@@ -269,7 +269,7 @@ namespace SGS.Projects.Api.Services
                 if (request.Date.HasValue)
                     timesheetData["U_Date"] = request.Date.Value.ToString("yyyy-MM-dd");
                 if (!string.IsNullOrEmpty(request.ResId))
-                    timesheetData["U_ResId"] = int.Parse(request.ResId).ToString("000");
+                    timesheetData["U_ResId"] = request.ResId;
                 if (!string.IsNullOrEmpty(request.CardCode))
                     timesheetData["U_CardCode"] = request.CardCode;
                 if (!string.IsNullOrEmpty(request.CardName))
@@ -304,10 +304,10 @@ namespace SGS.Projects.Api.Services
                     timesheetData["U_TimeNrPa"] = request.TimeNrPa.Value;
                 if (request.TimeNrNF.HasValue)
                     timesheetData["U_TimeNrNF"] = request.TimeNrNF.Value;
-                if (request.TimeNrTot.HasValue)
+                if (request.TimeNrTot.HasValue){
                     timesheetData["U_TimeNrTot"] = request.TimeNrTot.Value;
-                if (request.TimeNrNet.HasValue)
-                    timesheetData["U_TimeNrNet"] = request.TimeNrNet.Value;
+                    timesheetData["U_TimeNrNet"] = request.TimeNrTot.Value;
+                }
                 if (!string.IsNullOrEmpty(request.DescExt))
                     timesheetData["U_DescExt"] = request.DescExt;
                 if (!string.IsNullOrEmpty(request.DescInt))
