@@ -1,6 +1,9 @@
 using System.Text;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 using Newtonsoft.Json;
 using SGS.Projects.Api.Models;
 
@@ -12,14 +15,21 @@ namespace SGS.Projects.Api.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<SapB1ServiceLayerService> _logger;
         private readonly IDbOdbcService _dbOdbcService;
+        private readonly IMemoryCache _memoryCache;
+        private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly ICredentialStore _credentialStore;
         private string? _sessionId;
+        private static readonly SemaphoreSlim _loginLock = new SemaphoreSlim(1, 1);
 
-        public SapB1ServiceLayerService(HttpClient httpClient, IConfiguration configuration, ILogger<SapB1ServiceLayerService> logger, IDbOdbcService dbOdbcService)
+        public SapB1ServiceLayerService(HttpClient httpClient, IConfiguration configuration, ILogger<SapB1ServiceLayerService> logger, IDbOdbcService dbOdbcService, IMemoryCache memoryCache, IHttpContextAccessor httpContextAccessor, ICredentialStore credentialStore)
         {
             _httpClient = httpClient;
             _configuration = configuration;
             _logger = logger;
             _dbOdbcService = dbOdbcService;
+            _memoryCache = memoryCache;
+            _httpContextAccessor = httpContextAccessor;
+            _credentialStore = credentialStore;
             
             var baseUrl = configuration["SapB1:ServiceLayerUrl"] 
                 ?? throw new ArgumentNullException(nameof(configuration), "SapB1:ServiceLayerUrl not found");
@@ -28,23 +38,57 @@ namespace SGS.Projects.Api.Services
 
         public async Task<string> GetSessionIdAsync()
         {
-            // Se abbiamo già una sessione, verifichiamo che sia ancora valida
-            if (!string.IsNullOrEmpty(_sessionId))
+            var userKey = GetCurrentTokenJti();
+            if (string.IsNullOrEmpty(userKey))
             {
+                throw new InvalidOperationException("Richiesta non autenticata o token privo di JTI");
+            }
+
+            var (cookieKey, sessionKey) = GetCacheKeys(userKey);
+
+            // Prova a leggere dalla cache per utente
+            if (_memoryCache.TryGetValue(cookieKey, out string? cachedCookie) &&
+                _memoryCache.TryGetValue(sessionKey, out string? cachedSessionId) &&
+                !string.IsNullOrEmpty(cachedCookie) && !string.IsNullOrEmpty(cachedSessionId))
+            {
+                // Applica il cookie all'HttpClient corrente
+                _httpClient.DefaultRequestHeaders.Remove("Cookie");
+                _httpClient.DefaultRequestHeaders.Add("Cookie", cachedCookie);
+                _sessionId = cachedSessionId;
+
                 if (await IsSessionValidAsync())
                 {
-                    return _sessionId;
+                    return _sessionId!;
                 }
                 else
                 {
-                    _logger.LogWarning("Session expired, attempting to reconnect");
-                    _sessionId = null;
-                    _httpClient.DefaultRequestHeaders.Remove("Cookie");
+                    _logger.LogWarning("Cached session expired for user {UserKey}, attempting to reconnect", userKey);
+                    InvalidateSessionLocal(userKey);
                 }
             }
 
-            // Effettua il login
-            return await LoginAsync();
+            // Evita login concorrenti
+            await _loginLock.WaitAsync();
+            try
+            {
+                // Ricontrolla perché un altro thread potrebbe aver effettuato il login
+                if (_memoryCache.TryGetValue(cookieKey, out cachedCookie) &&
+                    _memoryCache.TryGetValue(sessionKey, out string? cachedSessionId2) &&
+                    !string.IsNullOrEmpty(cachedCookie) && !string.IsNullOrEmpty(cachedSessionId2))
+                {
+                    _httpClient.DefaultRequestHeaders.Remove("Cookie");
+                    _httpClient.DefaultRequestHeaders.Add("Cookie", cachedCookie);
+                    _sessionId = cachedSessionId2;
+                    return _sessionId!;
+                }
+
+                // Effettua il login
+                return await LoginAsync(userKey);
+            }
+            finally
+            {
+                _loginLock.Release();
+            }
         }
 
         private async Task<bool> IsSessionValidAsync()
@@ -61,15 +105,21 @@ namespace SGS.Projects.Api.Services
             }
         }
 
-        private async Task<string> LoginAsync()
+        private async Task<string> LoginAsync(string userKey)
         {
             try
             {
+                var credsOpt = _credentialStore.GetCredentials(userKey);
+                if (credsOpt == null)
+                {
+                    throw new InvalidOperationException("Credenziali non trovate per il token");
+                }
+                var (userName, password) = credsOpt.Value;
                 var loginData = new
                 {
                     CompanyDB = _configuration["SapB1:CompanyDB"],
-                    UserName = _configuration["SapB1:UserName"],
-                    Password = _configuration["SapB1:Password"]
+                    UserName = userName,
+                    Password = password
                 };
 
                 var json = JsonConvert.SerializeObject(loginData);
@@ -85,8 +135,21 @@ namespace SGS.Projects.Api.Services
                     
                     if (!string.IsNullOrEmpty(_sessionId))
                     {
-                        _httpClient.DefaultRequestHeaders.Add("Cookie", $"B1SESSION={_sessionId}");
-                        _logger.LogInformation("Successfully logged in to SAP B1 Service Layer");
+                        // Recupera anche eventuale ROUTEID dai Set-Cookie (se presente)
+                        var setCookieHeaders = response.Headers.TryGetValues("Set-Cookie", out var values)
+                            ? string.Join(" ", values)
+                            : string.Empty;
+                        string routeId = ExtractRouteId(setCookieHeaders);
+
+                        var cookieString = string.IsNullOrEmpty(routeId)
+                            ? $"B1SESSION={_sessionId}"
+                            : $"B1SESSION={_sessionId}; ROUTEID={routeId}";
+
+                        _httpClient.DefaultRequestHeaders.Remove("Cookie");
+                        _httpClient.DefaultRequestHeaders.Add("Cookie", cookieString);
+
+                        CacheSession(userKey, cookieString, _sessionId);
+                        _logger.LogInformation("Successfully logged in to SAP B1 Service Layer for user {UserKey}", userKey);
                         return _sessionId;
                     }
                 }
@@ -96,7 +159,7 @@ namespace SGS.Projects.Api.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error logging in to SAP B1 Service Layer");
+                _logger.LogError(ex, "Error logging in to SAP B1 Service Layer for user {UserKey}", userKey);
                 throw;
             }
         }
@@ -111,13 +174,15 @@ namespace SGS.Projects.Api.Services
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || 
                     response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
-                    _logger.LogWarning("API call failed with unauthorized status, attempting to reconnect");
-                    _sessionId = null;
-                    _httpClient.DefaultRequestHeaders.Remove("Cookie");
+                    var userKey = GetCurrentTokenJti();
+                    _logger.LogWarning("API call failed with unauthorized status, attempting to reconnect for user {UserKey}", userKey);
+                    if (!string.IsNullOrEmpty(userKey))
+                    {
+                        InvalidateSessionLocal(userKey);
+                        await GetSessionIdAsync();
+                        response = await apiCall();
+                    }
                     
-                    // Riconnetti e riprova la chiamata
-                    await GetSessionIdAsync();
-                    response = await apiCall();
                 }
                 
                 return response;
@@ -127,6 +192,47 @@ namespace SGS.Projects.Api.Services
                 _logger.LogError(ex, "Error executing API call with retry");
                 throw;
             }
+        }
+
+        private void CacheSession(string userKey, string cookieString, string sessionId)
+        {
+            var defaultMinutes = 25; // fallback in caso non configurato
+            var ttlMinutesConfig = _configuration["SapB1:SessionTimeoutMinutes"];
+            if (!int.TryParse(ttlMinutesConfig, out int ttlMinutes))
+            {
+                ttlMinutes = defaultMinutes;
+            }
+
+            var options = new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(ttlMinutes)
+            };
+
+            var (cookieKey, sessionKey) = GetCacheKeys(userKey);
+            _memoryCache.Set(cookieKey, cookieString, options);
+            _memoryCache.Set(sessionKey, sessionId, options);
+        }
+
+        private void InvalidateSessionLocal(string userKey)
+        {
+            _sessionId = null;
+            _httpClient.DefaultRequestHeaders.Remove("Cookie");
+            var (cookieKey, sessionKey) = GetCacheKeys(userKey);
+            _memoryCache.Remove(cookieKey);
+            _memoryCache.Remove(sessionKey);
+        }
+
+        private string ExtractRouteId(string setCookie)
+        {
+            if (string.IsNullOrEmpty(setCookie)) return string.Empty;
+            // Cerca ROUTEID=xxxx; o ROUTEID=xxxx,
+            var token = "ROUTEID=";
+            var idx = setCookie.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return string.Empty;
+            idx += token.Length;
+            var endIdx = setCookie.IndexOfAny(new[] { ';', ',', ' ' }, idx);
+            if (endIdx < 0) endIdx = setCookie.Length;
+            return setCookie.Substring(idx, endIdx - idx);
         }
 
         public async Task<List<Timesheet>> GetTimesheetsAsync()
@@ -477,6 +583,17 @@ namespace SGS.Projects.Api.Services
         public void Dispose()
         {
             _httpClient?.Dispose();
+        }
+
+        private string? GetCurrentTokenJti()
+        {
+            var user = _httpContextAccessor.HttpContext?.User;
+            return user?.FindFirstValue("jti") ?? user?.FindFirstValue(ClaimTypes.NameIdentifier);
+        }
+
+        private (string cookieKey, string sessionKey) GetCacheKeys(string userKey)
+        {
+            return ($"SapB1:SessionCookie:{userKey}", $"SapB1:SessionId:{userKey}");
         }
     }
 }

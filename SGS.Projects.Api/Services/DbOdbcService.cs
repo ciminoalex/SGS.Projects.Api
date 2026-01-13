@@ -1,5 +1,8 @@
 using System.Data.Odbc;
 using SGS.Projects.Api.Models;
+using Microsoft.AspNetCore.Http;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 namespace SGS.Projects.Api.Services
 {
@@ -8,8 +11,9 @@ namespace SGS.Projects.Api.Services
         private readonly string _connectionString;
         private readonly string _schema;
         private readonly ILogger<DbOdbcService> _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public DbOdbcService(IConfiguration configuration, ILogger<DbOdbcService> logger)
+        public DbOdbcService(IConfiguration configuration, ILogger<DbOdbcService> logger, IHttpContextAccessor httpContextAccessor)
         {
             _connectionString = configuration.GetConnectionString("DefaultDatabase") 
                 ?? throw new ArgumentNullException(nameof(configuration), "DefaultDatabase connection string not found");
@@ -19,6 +23,28 @@ namespace SGS.Projects.Api.Services
 
 
             _logger = logger;
+            _httpContextAccessor = httpContextAccessor;
+        }
+
+        private async Task<OdbcConnection> CreateOpenConnectionAsync()
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var connection = new OdbcConnection(_connectionString);
+            try
+            {
+                _logger.LogDebug("Opening ODBC connection to schema {Schema}", _schema);
+                await connection.OpenAsync();
+                stopwatch.Stop();
+                _logger.LogInformation("ODBC connection opened in {ElapsedMs} ms", stopwatch.ElapsedMilliseconds);
+                return connection;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Failed to open ODBC connection after {ElapsedMs} ms", stopwatch.ElapsedMilliseconds);
+                connection.Dispose();
+                throw;
+            }
         }
 
         public async Task<IEnumerable<Timesheet>> GetTimesheetsAsync()
@@ -27,8 +53,7 @@ namespace SGS.Projects.Api.Services
             
             try
             {
-                using var connection = new OdbcConnection(_connectionString);
-                await connection.OpenAsync();
+                using var connection = await CreateOpenConnectionAsync();
                 
                 var query = $@"
                     SELECT 
@@ -565,7 +590,10 @@ namespace SGS.Projects.Api.Services
                     AND ""Code"" != ''";
                 
                 using var command = new OdbcCommand(query, connection);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 var result = await command.ExecuteScalarAsync();
+                sw.Stop();
+                _logger.LogInformation("ODBC ExecuteScalar completed in {ElapsedMs} ms", sw.ElapsedMilliseconds);
                 
                 if (result != null && result != DBNull.Value)
                 {
@@ -586,8 +614,7 @@ namespace SGS.Projects.Api.Services
             var customers = new List<CustomerSummary>();
             try
             {
-                using var connection = new OdbcConnection(_connectionString);
-                await connection.OpenAsync();
+                using var connection = await CreateOpenConnectionAsync();
 
                 var query = $@"
                     SELECT 
@@ -598,7 +625,10 @@ namespace SGS.Projects.Api.Services
                     ORDER BY ""CardName""";
 
                 using var command = new OdbcCommand(query, connection);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 using var reader = await command.ExecuteReaderAsync();
+                sw.Stop();
+                _logger.LogInformation("ODBC ExecuteReader(customers) completed in {ElapsedMs} ms", sw.ElapsedMilliseconds);
                 while (await reader.ReadAsync())
                 {
                     customers.Add(new CustomerSummary
@@ -621,8 +651,7 @@ namespace SGS.Projects.Api.Services
             var contacts = new List<ContactSummary>();
             try
             {
-                using var connection = new OdbcConnection(_connectionString);
-                await connection.OpenAsync();
+                using var connection = await CreateOpenConnectionAsync();
 
                 var query = $@"
                     SELECT 
@@ -634,7 +663,10 @@ namespace SGS.Projects.Api.Services
 
                 using var command = new OdbcCommand(query, connection);
                 command.Parameters.AddWithValue("@CardCode", cardCode);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 using var reader = await command.ExecuteReaderAsync();
+                sw.Stop();
+                _logger.LogInformation("ODBC ExecuteReader(contacts) completed in {ElapsedMs} ms", sw.ElapsedMilliseconds);
                 while (await reader.ReadAsync())
                 {
                     contacts.Add(new ContactSummary
@@ -772,6 +804,22 @@ namespace SGS.Projects.Api.Services
                 using var connection = new OdbcConnection(_connectionString);
                 await connection.OpenAsync();
 
+                // Read from common JWT claims to handle mapping differences
+                var principal = _httpContextAccessor.HttpContext?.User;
+                var jti = principal?.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;
+                var userName =
+                    principal?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                    ?? principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? principal?.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value
+                    ?? principal?.Claims.FirstOrDefault(c => c.Type == "unique_name")?.Value
+                    ?? principal?.FindFirst(ClaimTypes.Name)?.Value;
+                _logger.LogDebug("GetResourcesAsync principal resolved: sub/name={User}, jti={Jti}", userName ?? "", jti ?? "");
+                if (string.IsNullOrWhiteSpace(userName))
+                {
+                    _logger.LogWarning("GetResourcesAsync: missing JWT 'sub' claim (Authorization header may contain an old/invalid token)");
+                    return resources;
+                }
+
                 var query = $@"
                     SELECT 
                         T0.""ResCode"" AS ""Code"",
@@ -780,10 +828,18 @@ namespace SGS.Projects.Api.Services
                     INNER JOIN ""{_schema}"".""RSC4"" T1 ON T0.""ResCode"" = T1.""ResCode""
                     INNER JOIN ""{_schema}"".""OHEM"" T2 ON T1.""EmpID"" = T2.""empID""
                     INNER JOIN ""{_schema}"".""OUSR"" T3 ON T2.""userId"" = T3.""USERID""
+                    LEFT JOIN
+                    (
+                        ""{_schema}"".""OHEM"" T4
+                        INNER JOIN ""{_schema}"".""OUSR"" T5 ON T4.""userId"" = T5.""USERID""
+                    ) ON T4.""empID"" = T2.""manager""
                     WHERE T0.""validFor"" = 'Y' AND T2.""Active"" = 'Y'
+                    AND (T3.""USER_CODE"" = ? OR IFNULL(T5.""USER_CODE"",'') = ?)
                     ORDER BY T0.""ResName""";
 
                 using var command = new OdbcCommand(query, connection);
+                command.Parameters.AddWithValue("@User1", userName);
+                command.Parameters.AddWithValue("@User2", userName);
                 using var reader = await command.ExecuteReaderAsync();
                 while (await reader.ReadAsync())
                 {

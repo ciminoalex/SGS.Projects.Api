@@ -116,3 +116,179 @@ Per problemi tecnici:
 2. Verifica la configurazione ODBC
 3. Testa la connessione al Service Layer
 4. Contatta il supporto SAP se necessario
+
+## Distribuzione in Produzione (Windows Server)
+
+### Panoramica
+Questa API .NET 9 espone endpoint REST e dipende da:
+- **ODBC** verso SAP HANA (`HDBODBC`) e/o SQL Server (opzionale)
+- **SAP Business One Service Layer** via HTTPS
+
+Sono supportati due modelli di hosting:
+- IIS con ASP.NET Core Module (ANCM)
+- Servizio Windows tramite `sc.exe` o NSSM
+
+### 1) Preparazione server
+- **Sistema**: Windows Server 2019/2022 con aggiornamenti.
+- **.NET Runtime**: installa .NET 9 ASP.NET Hosting Bundle.
+  - Download: `https://dotnet.microsoft.com/en-us/download/dotnet/9.0`
+  - Verifica: `dotnet --info`.
+- **Driver ODBC**:
+  - SAP HANA Client (include `HDBODBC`). Assicurati che l'architettura (x64) coincida con il processo dell'app.
+  - Facoltativo: ODBC Driver 17/18 for SQL Server (se usi `ConnectionStrings:SqlServer`).
+- **Certificati**: importa il certificato server usato da SAP B1 Service Layer nella `Local Computer\Trusted Root` o `Intermediate` per evitare warning; in alternativa, lascia la bypass SSL già presente in `Program.cs` (sconsigliato in produzione).
+- **Firewall**: apri le porte per l'API (es. 80/443 o porta custom) e assicurati l’uscita verso l’host e la porta del Service Layer (es. 50000).
+
+### 2) Configurazione applicazione
+Preferisci variabili d’ambiente su `appsettings.json` per credenziali/host.
+
+- Chiavi principali (case-insensitive con `__` per i separatori):
+  - `ConnectionStrings__DefaultDatabase`
+  - `ConnectionStrings__SqlServer` (se usata)
+  - `SapB1__ServiceLayerUrl` (es. `https://srv-hana01-srv:50000/b1s/v1/`)
+  - `SapB1__CompanyDB`
+  - `SapB1__UserName`
+  - `SapB1__Password`
+
+Esempio PowerShell (scope sistema):
+```powershell
+[Environment]::SetEnvironmentVariable("ConnectionStrings__DefaultDatabase","Driver={HDBODBC};ServerNode=<hana-host>:30015;UID=<user>;PWD=<pwd>;","Machine")
+[Environment]::SetEnvironmentVariable("SapB1__ServiceLayerUrl","https://<sap-server>:50000/b1s/v1/","Machine")
+[Environment]::SetEnvironmentVariable("SapB1__CompanyDB","<db>","Machine")
+[Environment]::SetEnvironmentVariable("SapB1__UserName","<user>","Machine")
+[Environment]::SetEnvironmentVariable("SapB1__Password","<strong-password>","Machine")
+```
+Riavvia IIS/servizio dopo le modifiche.
+
+Note sicurezza:
+- Evita credenziali in `appsettings*.json`. Usa secret store/Key Vault quando possibile.
+- Valuta di rimuovere il bypass SSL in `Program.cs` in produzione.
+
+### Esempio configurazione Kestrel in appsettings.json
+Puoi configurare l’endpoint HTTPS e la porta direttamente nel file di configurazione (alternativa alle variabili d’ambiente):
+
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://+:7226"
+      }
+    }
+  }
+}
+```
+
+Con certificato PFX:
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://+:7226",
+        "Certificate": {
+          "Path": "C:\\certs\\api.pfx",
+          "Password": "<PASSWORD>"
+        }
+      }
+    }
+  }
+}
+```
+
+Con certificato dal Windows Certificate Store:
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://+:7226",
+        "Certificate": {
+          "Subject": "CN=api.tuodominio.it",
+          "Store": "My",
+          "Location": "LocalMachine"
+        }
+      }
+    }
+  }
+}
+```
+
+Nota: per evitare l’avviso di redirect HTTPS, imposta anche `ASPNETCORE_HTTPS_PORT=7226` (o aggiungi un binding https esplicito come sopra). In produzione, usa un certificato valido e non il dev-certs.
+
+### 3) Distribuzione su IIS
+1. Installa IIS e ASP.NET Core Hosting Bundle.
+2. Crea una cartella, es. `C:\inetpub\SGS.Projects.Api` e copia i file pubblicati (`dotnet publish -c Release`).
+3. In IIS Manager:
+   - Crea un nuovo Application Pool (No Managed Code, Integrated, 64-bit). Abilita `Start Automatically`.
+   - Crea un nuovo Sito o App sotto un sito esistente, impostando la Physical Path alla cartella pubblicata.
+   - Associa il nuovo Application Pool.
+   - Configura binding: HTTP/HTTPS, host header e certificato (per HTTPS).
+4. Concedi permessi di lettura/esecuzione alla Identity dell’App Pool sulla cartella.
+5. Variabili d’ambiente: se non configurate a livello macchina, impostale in web.config o a livello di App Pool (Advanced Settings > EnvironmentVariables).
+6. Verifica avvio: naviga `/swagger` e prova gli endpoint di `Timesheet` e `Lookup`.
+
+Pubblicazione da CLI (sul server o in CI):
+```powershell
+ dotnet publish .\SGS.Projects.Api\SGS.Projects.Api.csproj -c Release -o C:\inetpub\SGS.Projects.Api\publish
+```
+Punta IIS alla cartella `publish`.
+
+### 4) Distribuzione come Servizio Windows (alternativa)
+1. Pubblica self-contained o framework-dependent:
+```powershell
+ dotnet publish .\SGS.Projects.Api\SGS.Projects.Api.csproj -c Release -o C:\Services\SGS.Projects.Api
+```
+2. Crea il servizio (NSSM consigliato) oppure `sc.exe` con `pwsh`/`dotnet`:
+- Con NSSM:
+  - `nssm install SGS.Projects.Api`
+  - Path: `C:\Program Files\dotnet\dotnet.exe`
+  - Arguments: `C:\Services\SGS.Projects.Api\SGS.Projects.Api.dll`
+  - Startup: Automatic; Imposta variabili d’ambiente nella scheda `Environment`.
+- Con `sc.exe` (solo self-contained EXE):
+```powershell
+ sc create SGS.Projects.Api binPath= "C:\Services\SGS.Projects.Api\SGS.Projects.Api.exe" start= auto
+ sc start SGS.Projects.Api
+```
+3. Log on account: usa un account con permessi minimi e accesso ai driver ODBC.
+4. Controlla i log (Event Viewer > Windows Logs > Application).
+
+### 5) ODBC verso SAP HANA e SQL Server
+- Il codice usa direttamente connection string ODBC; non è necessario creare DSN, ma assicurati che:
+  - Il driver `HDBODBC` sia installato e nel PATH.
+  - La porta HANA (tipicamente 30015) sia raggiungibile.
+  - Per SQL Server, installa `ODBC Driver 17/18 for SQL Server` e apri la porta 1433 se richiesto.
+- Test rapido:
+```powershell
+ Test-NetConnection <hana-host> -Port 30015
+ Test-NetConnection <sql-host> -Port 1433
+```
+
+### 6) HTTPS, CORS e Sicurezza
+- L’app abilita CORS permissivo (`AllowAnyOrigin`). In produzione, limita origini/headers/metodi o usa `WithOrigins("https://<domain>")`.
+- HTTPS: configura binding e certificato in IIS o esegui dietro un reverse proxy con TLS terminato.
+- Rimuovi o limita Swagger in produzione (attualmente abilitato solo in Development).
+- Proteggi gli endpoint con autenticazione/authorization se esposti pubblicamente.
+
+### 7) Variabili ambiente per logging
+Imposta livelli di log:
+```powershell
+[Environment]::SetEnvironmentVariable("Logging__LogLevel__Default","Information","Machine")
+[Environment]::SetEnvironmentVariable("Logging__LogLevel__Microsoft.AspNetCore","Warning","Machine")
+[Environment]::SetEnvironmentVariable("Logging__LogLevel__SGS.Projects.Api","Information","Machine")
+```
+
+### 8) Health check e verifica
+- Verifica processo in ascolto: `netstat -ano | findstr :<porta>`.
+- Verifica endpoint: `GET https://<host>/swagger` e una chiamata a `GET /api/timesheet`.
+
+### 9) Troubleshooting specifico
+- "SSL certificate validation bypassed" nei log: indica che è attivo il bypass SSL. Installare CA corrette o rimuovere il bypass in `Program.cs`.
+- "Driver not found": controlla versione/architettura del driver ODBC.
+- "Login failed Service Layer": conferma `SapB1:CompanyDB`, `UserName`, `Password` e raggiungibilità dell’URL.
+- Timeouts/401 dal Service Layer: il servizio gestisce il retry; controlla scadenza sessione e orologi NTP.
+
+### 10) Aggiornamenti/Rollback
+- Mantieni versioni pubblicate in `C:\inetpub\SGS.Projects.Api\releases\<version>`.
+- Usa uno swap atomico del path IIS o symlink aggiornando la `Physical Path`.
+- Conserva backup dell’`appsettings.Production.json` o delle variabili d’ambiente prima degli update.
