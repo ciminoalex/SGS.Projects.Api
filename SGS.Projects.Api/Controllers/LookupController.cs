@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SGS.Projects.Api.Models;
 using SGS.Projects.Api.Services;
@@ -7,7 +6,6 @@ namespace SGS.Projects.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
     public class LookupController : ControllerBase
     {
         private readonly IDbOdbcService _dbOdbcService;

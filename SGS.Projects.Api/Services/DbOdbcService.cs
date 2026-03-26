@@ -718,6 +718,46 @@ namespace SGS.Projects.Api.Services
             return projects;
         }
 
+        public async Task<ProjectLookupDetail?> GetProjectLookupDetailByCodeAsync(string projectCode)
+        {
+            try
+            {
+                using var connection = await CreateOpenConnectionAsync();
+
+                var query = $@"
+                    SELECT
+                        T.""AbsEntry"" AS ""Code"",
+                        T.""NAME"" AS ""Name"",
+                        T.""CARDCODE"" AS ""CardCode"",
+                        C.""CardName"" AS ""CardName""
+                    FROM ""{_schema}"".""OPMG"" T
+                    LEFT JOIN ""{_schema}"".""OCRD"" C ON C.""CardCode"" = T.""CARDCODE""
+                    WHERE T.""AbsEntry"" = ?";
+
+                using var command = new OdbcCommand(query, connection);
+                command.Parameters.AddWithValue("@ProjectCode", projectCode);
+                using var reader = await command.ExecuteReaderAsync();
+
+                if (!await reader.ReadAsync())
+                {
+                    return null;
+                }
+
+                return new ProjectLookupDetail
+                {
+                    Code = reader.IsDBNull(0) ? string.Empty : reader.GetInt32(0).ToString(),
+                    Name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                    CardCode = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                    CardName = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving project detail for project {ProjectCode} from database", projectCode);
+                throw;
+            }
+        }
+
         public async Task<IEnumerable<ActivitySummary>> GetActivitiesByProjectAsync(string projectCode)
         {
             var activities = new List<ActivitySummary>();
@@ -814,14 +854,8 @@ namespace SGS.Projects.Api.Services
                     ?? principal?.Claims.FirstOrDefault(c => c.Type == "unique_name")?.Value
                     ?? principal?.FindFirst(ClaimTypes.Name)?.Value;
                 _logger.LogDebug("GetResourcesAsync principal resolved: sub/name={User}, jti={Jti}", userName ?? "", jti ?? "");
-                if (string.IsNullOrWhiteSpace(userName))
-                {
-                    _logger.LogWarning("GetResourcesAsync: missing JWT 'sub' claim (Authorization header may contain an old/invalid token)");
-                    return resources;
-                }
-
                 var query = $@"
-                    SELECT 
+                    SELECT DISTINCT
                         T0.""ResCode"" AS ""Code"",
                         T0.""ResName"" AS ""Name""
                     FROM ""{_schema}"".""ORSC"" T0
@@ -833,13 +867,25 @@ namespace SGS.Projects.Api.Services
                         ""{_schema}"".""OHEM"" T4
                         INNER JOIN ""{_schema}"".""OUSR"" T5 ON T4.""userId"" = T5.""USERID""
                     ) ON T4.""empID"" = T2.""manager""
-                    WHERE T0.""validFor"" = 'Y' AND T2.""Active"" = 'Y'
-                    AND (T3.""USER_CODE"" = ? OR IFNULL(T5.""USER_CODE"",'') = ?)
-                    ORDER BY T0.""ResName""";
+                    WHERE T0.""validFor"" = 'Y' AND T2.""Active"" = 'Y'";
 
-                using var command = new OdbcCommand(query, connection);
-                command.Parameters.AddWithValue("@User1", userName);
-                command.Parameters.AddWithValue("@User2", userName);
+                using var command = new OdbcCommand();
+                command.Connection = connection;
+                if (string.IsNullOrWhiteSpace(userName))
+                {
+                    // Auth disabilitata o token non disponibile: restituisce tutte le risorse attive.
+                    _logger.LogInformation("GetResourcesAsync: missing JWT user claim, returning all active resources");
+                    command.CommandText = query + @" ORDER BY T0.""ResName""";
+                }
+                else
+                {
+                    command.CommandText = query + @"
+                        AND (T3.""USER_CODE"" = ? OR IFNULL(T5.""USER_CODE"",'') = ?)
+                        ORDER BY T0.""ResName""";
+                    command.Parameters.AddWithValue("@User1", userName);
+                    command.Parameters.AddWithValue("@User2", userName);
+                }
+
                 using var reader = await command.ExecuteReaderAsync();
                 while (await reader.ReadAsync())
                 {

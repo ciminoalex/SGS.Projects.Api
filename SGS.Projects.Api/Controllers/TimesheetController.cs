@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SGS.Projects.Api.Models;
 using SGS.Projects.Api.Services;
@@ -7,7 +6,6 @@ namespace SGS.Projects.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
     public class TimesheetController : ControllerBase
     {
         private readonly IDbOdbcService _dbOdbcService;
@@ -182,6 +180,88 @@ namespace SGS.Projects.Api.Controllers
                 _logger.LogError(ex, "Error creating timesheet");
                 return StatusCode(500, "Errore interno del server durante la creazione del timesheet");
             }
+        }
+
+        /// <summary>
+        /// Crea un nuovo timesheet partendo da un payload semplificato
+        /// </summary>
+        [HttpPost("lite")]
+        public async Task<ActionResult<Timesheet>> CreateTimesheetLite([FromBody] TimesheetCreateRequestLite request)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                if (request.Hours is null || request.Hours <= 0)
+                    return BadRequest("Il campo Hours deve essere maggiore di zero");
+
+                var dependencyResult = await ResolveLiteDependenciesAsync(request);
+                if (dependencyResult.ErrorResult is not null)
+                    return dependencyResult.ErrorResult;
+
+                var timesheet = await _sapB1Service.CreateTimesheetLiteAsync(
+                    request,
+                    dependencyResult.Project!,
+                    dependencyResult.Activity!);
+                return CreatedAtAction(nameof(GetTimesheet), new { docEntry = timesheet.DocEntry }, timesheet);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating lite timesheet for project {Project} and activity {ActivityId}", request.Project, request.ActivityId);
+                return StatusCode(500, "Errore interno del server durante la creazione del timesheet lite");
+            }
+        }
+
+        /// <summary>
+        /// Restituisce il payload mappato verso Service Layer senza creare il timesheet
+        /// </summary>
+        [HttpPost("lite/preview")]
+        public async Task<ActionResult<TimesheetServiceLayerPayload>> PreviewTimesheetLiteMapping([FromBody] TimesheetCreateRequestLite request)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                if (request.Hours is null || request.Hours <= 0)
+                    return BadRequest("Il campo Hours deve essere maggiore di zero");
+
+                var dependencyResult = await ResolveLiteDependenciesAsync(request);
+                if (dependencyResult.ErrorResult is not null)
+                    return dependencyResult.ErrorResult;
+
+                var payload = _sapB1Service.BuildTimesheetLitePayload(
+                    request,
+                    dependencyResult.Project!,
+                    dependencyResult.Activity!);
+
+                return Ok(payload);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error previewing lite timesheet mapping for project {Project} and activity {ActivityId}", request.Project, request.ActivityId);
+                return StatusCode(500, "Errore interno del server durante il preview del mapping timesheet lite");
+            }
+        }
+
+        private async Task<(ProjectLookupDetail? Project, ActivitySummary? Activity, ActionResult? ErrorResult)> ResolveLiteDependenciesAsync(TimesheetCreateRequestLite request)
+        {
+            var project = await _dbOdbcService.GetProjectLookupDetailByCodeAsync(request.Project);
+            if (project is null)
+                return (null, null, NotFound($"Progetto {request.Project} non trovato"));
+
+            var activities = await _dbOdbcService.GetActivitiesByProjectAsync(request.Project);
+            var activity = activities.FirstOrDefault(a =>
+                string.Equals(a.Code, request.ActivityId, StringComparison.OrdinalIgnoreCase));
+
+            if (activity is null)
+                return (null, null, NotFound($"Attività {request.ActivityId} non trovata per il progetto {request.Project}"));
+
+            if (string.IsNullOrWhiteSpace(project.CardCode) || string.IsNullOrWhiteSpace(project.Name))
+                return (null, null, BadRequest($"Dati anagrafici incompleti per il progetto {request.Project}"));
+
+            return (project, activity, null);
         }
 
         /// <summary>

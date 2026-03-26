@@ -16,6 +16,7 @@ namespace SGS.Projects.Api.Services
         Task<IEnumerable<CustomerSummary>> GetCustomersAsync();
         Task<IEnumerable<ContactSummary>> GetContactsByCustomerAsync(string cardCode);
         Task<IEnumerable<ProjectSummary>> GetProjectsAsync();
+        Task<ProjectLookupDetail?> GetProjectLookupDetailByCodeAsync(string projectCode);
         Task<IEnumerable<ActivitySummary>> GetActivitiesByProjectAsync(string projectCode);
         Task<IEnumerable<ProjectSummary>> GetProjectsByCustomerAsync(string cardCode);
         Task<IEnumerable<ResourceSummary>> GetResourcesAsync();

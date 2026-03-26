@@ -106,6 +106,48 @@ namespace SGS.Projects.Api.Models
         public string? Status { get; set; }
     }
 
+    public class TimesheetCreateRequestLite
+    {
+        [Required]
+        public DateTime Date { get; set; }
+        [Required]
+        public string ResId { get; set; } = string.Empty;
+        [Required]
+        public string Project { get; set; } = string.Empty;
+        [Required]
+        public string ActivityId { get; set; } = string.Empty;
+        [Required]
+        public decimal? Hours { get; set; }
+        [Required]
+        public string? Desc { get; set; }
+    }
+
+    public class TimesheetServiceLayerPayload
+    {
+        public string U_ResId { get; set; } = string.Empty;
+        public string U_Date { get; set; } = string.Empty;
+        public string U_CardCode { get; set; } = string.Empty;
+        public string U_CardName { get; set; } = string.Empty;
+        public string U_Project { get; set; } = string.Empty;
+        public string U_ProjectName { get; set; } = string.Empty;
+        public string U_Activity { get; set; } = string.Empty;
+        public string U_ActivityName { get; set; } = string.Empty;
+        public string U_TimeStart { get; set; } = string.Empty;
+        public string U_TimeEnd { get; set; } = string.Empty;
+        public string U_TimePa { get; set; } = string.Empty;
+        public decimal U_TimeNrPa { get; set; }
+        public decimal U_TimeNrNF { get; set; }
+        public decimal U_TimeNrTot { get; set; }
+        public decimal U_TimeNrNet { get; set; }
+        public string? U_DescExt { get; set; }
+        public string U_Status { get; set; } = string.Empty;
+        public string U_ActivityId { get; set; } = string.Empty;
+        public decimal U_TimeNrPaOri { get; set; }
+        public decimal U_TimeNrNFOri { get; set; }
+        public decimal U_TimeNrTotOri { get; set; }
+        public decimal U_TimeNrNetOri { get; set; }
+    }
+
     public class TimesheetUpdateRequest
     {
         [Required]

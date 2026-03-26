@@ -18,6 +18,14 @@ namespace SGS.Projects.Api.Models
         public string Name { get; set; } = string.Empty;
     }
 
+    public class ProjectLookupDetail
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string CardCode { get; set; } = string.Empty;
+        public string CardName { get; set; } = string.Empty;
+    }
+
     public class ActivitySummary
     {
         public string Code { get; set; } = string.Empty;

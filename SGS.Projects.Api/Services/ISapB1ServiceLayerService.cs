@@ -8,6 +8,14 @@ namespace SGS.Projects.Api.Services
         Task<List<Timesheet>> GetTimesheetsAsync();
         Task<Timesheet?> GetTimesheetAsync(string code);
         Task<Timesheet> CreateTimesheetAsync(TimesheetCreateRequest request);
+        Task<Timesheet> CreateTimesheetLiteAsync(
+            TimesheetCreateRequestLite request,
+            ProjectLookupDetail project,
+            ActivitySummary activity);
+        TimesheetServiceLayerPayload BuildTimesheetLitePayload(
+            TimesheetCreateRequestLite request,
+            ProjectLookupDetail project,
+            ActivitySummary activity);
         Task<Timesheet> UpdateTimesheetAsync(TimesheetUpdateRequest request);
         Task<bool> DeleteTimesheetAsync(string code);
     }

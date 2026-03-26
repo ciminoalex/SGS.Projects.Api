@@ -5,6 +5,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using SGS.Projects.Api.Models;
 
 namespace SGS.Projects.Api.Services
@@ -364,6 +365,102 @@ namespace SGS.Projects.Api.Services
             }
         }
 
+        public async Task<Timesheet> CreateTimesheetLiteAsync(
+            TimesheetCreateRequestLite request,
+            ProjectLookupDetail project,
+            ActivitySummary activity)
+        {
+            try
+            {
+                await GetSessionIdAsync();
+
+                var nextCode = await _dbOdbcService.GetNextTimesheetCodeAsync();
+                var payload = BuildTimesheetLitePayload(request, project, activity);
+                var timesheetData = new
+                {
+                    Code = nextCode,
+                    payload.U_ResId,
+                    payload.U_Date,
+                    payload.U_CardCode,
+                    payload.U_CardName,
+                    payload.U_Project,
+                    payload.U_ProjectName,
+                    payload.U_Activity,
+                    payload.U_ActivityName,
+                    payload.U_TimeStart,
+                    payload.U_TimeEnd,
+                    payload.U_TimePa,
+                    payload.U_TimeNrPa,
+                    payload.U_TimeNrNF,
+                    payload.U_TimeNrTot,
+                    payload.U_TimeNrNet,
+                    payload.U_DescExt,
+                    payload.U_Status,
+                    payload.U_ActivityId,
+                    payload.U_TimeNrPaOri,
+                    payload.U_TimeNrNFOri,
+                    payload.U_TimeNrTotOri,
+                    payload.U_TimeNrNetOri
+                };
+
+                var json = JsonConvert.SerializeObject(timesheetData);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await ExecuteWithRetryAsync(() => _httpClient.PostAsync("SGS_PRJ_OTMS", content));
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var result = JsonConvert.DeserializeObject<dynamic>(responseContent);
+                    return MapSapResponseToTimesheet(result);
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Failed to create lite timesheet. Status: {response.StatusCode}, Error: {errorContent}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating lite timesheet in SAP B1 Service Layer");
+                throw;
+            }
+        }
+
+        public TimesheetServiceLayerPayload BuildTimesheetLitePayload(
+            TimesheetCreateRequestLite request,
+            ProjectLookupDetail project,
+            ActivitySummary activity)
+        {
+            var startTime = new TimeSpan(9, 0, 0);
+            var endTime = startTime.Add(TimeSpan.FromHours(Convert.ToDouble(request.Hours ?? 0m)));
+            var hours = request.Hours ?? 0m;
+
+            return new TimesheetServiceLayerPayload
+            {
+                U_ResId = request.ResId,
+                U_Date = request.Date.ToString("yyyy-MM-dd"),
+                U_CardCode = project.CardCode,
+                U_CardName = project.CardName,
+                U_Project = request.Project,
+                U_ProjectName = project.Name,
+                U_Activity = request.ActivityId,
+                U_ActivityName = activity.Name,
+                U_TimeStart = startTime.ToString(@"hh\:mm\:ss"),
+                U_TimeEnd = endTime.ToString(@"hh\:mm\:ss"),
+                U_TimePa = "00:00:00",
+                U_TimeNrPa = 0m,
+                U_TimeNrNF = 0m,
+                U_TimeNrTot = hours,
+                U_TimeNrNet = hours,
+                U_DescExt = request.Desc,
+                U_Status = "Confermato",
+                U_ActivityId = request.ActivityId,
+                U_TimeNrPaOri = 0m,
+                U_TimeNrNFOri = 0m,
+                U_TimeNrTotOri = 0m,
+                U_TimeNrNetOri = 0m
+            };
+        }
+
         public async Task<Timesheet> UpdateTimesheetAsync(TimesheetUpdateRequest request)
         {
             try
@@ -565,9 +662,10 @@ namespace SGS.Projects.Api.Services
                     var responseContent = await response.Content.ReadAsStringAsync();
                     var result = JsonConvert.DeserializeObject<dynamic>(responseContent);
                     
-                    if (result?.value != null && result.value.Count > 0)
+                    var items = result?.value as JArray;
+                    if (items is not null && items.Count > 0)
                     {
-                        return MapSapResponseToTimesheet(result.value[0]!);
+                        return MapSapResponseToTimesheet(items[0]!);
                     }
                 }
 

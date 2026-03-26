@@ -119,28 +119,31 @@ builder.Services.AddHttpClient<ISapB1ServiceLayerService, SapB1ServiceLayerServi
 // Configure Authentication before building the app
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var jwtKey = jwtSection["Key"];
-if (!string.IsNullOrEmpty(jwtKey))
+if (string.IsNullOrWhiteSpace(jwtKey))
 {
-    builder.Services
-        .AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-        })
-        .AddJwtBearer(options =>
-        {
-            options.TokenValidationParameters = new TokenValidationParameters
-            {
-                ValidateIssuer = !string.IsNullOrEmpty(jwtSection["Issuer"]),
-                ValidateAudience = !string.IsNullOrEmpty(jwtSection["Audience"]),
-                ValidateIssuerSigningKey = true,
-                ValidateLifetime = true,
-                ValidIssuer = jwtSection["Issuer"],
-                ValidAudience = jwtSection["Audience"],
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
-            };
-        });
+    throw new InvalidOperationException(
+        "Configurazione JWT mancante: impostare 'Jwt:Key' in appsettings o variabili d'ambiente.");
 }
+
+builder.Services
+    .AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = !string.IsNullOrEmpty(jwtSection["Issuer"]),
+            ValidateAudience = !string.IsNullOrEmpty(jwtSection["Audience"]),
+            ValidateIssuerSigningKey = true,
+            ValidateLifetime = true,
+            ValidIssuer = jwtSection["Issuer"],
+            ValidAudience = jwtSection["Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+    });
 
 var app = builder.Build();
 
@@ -183,8 +186,6 @@ app.Use(async (context, next) =>
     }
 });
 
-app.UseAuthentication();
-app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
