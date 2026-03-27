@@ -19,6 +19,7 @@ namespace SGS.Projects.Api.Services
         private readonly IMemoryCache _memoryCache;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly ICredentialStore _credentialStore;
+        private const string ServiceAccountCacheKey = "service-account";
         private string? _sessionId;
         private static readonly SemaphoreSlim _loginLock = new SemaphoreSlim(1, 1);
 
@@ -39,11 +40,7 @@ namespace SGS.Projects.Api.Services
 
         public async Task<string> GetSessionIdAsync()
         {
-            var userKey = GetCurrentTokenJti();
-            if (string.IsNullOrEmpty(userKey))
-            {
-                throw new InvalidOperationException("Richiesta non autenticata o token privo di JTI");
-            }
+            var userKey = GetCurrentTokenJti() ?? ServiceAccountCacheKey;
 
             var (cookieKey, sessionKey) = GetCacheKeys(userKey);
 
@@ -111,11 +108,20 @@ namespace SGS.Projects.Api.Services
             try
             {
                 var credsOpt = _credentialStore.GetCredentials(userKey);
-                if (credsOpt == null)
+                var userName = credsOpt?.userName;
+                var password = credsOpt?.password;
+
+                if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password))
                 {
-                    throw new InvalidOperationException("Credenziali non trovate per il token");
+                    userName = _configuration["SapB1:UserName"];
+                    password = _configuration["SapB1:Password"];
                 }
-                var (userName, password) = credsOpt.Value;
+
+                if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password))
+                {
+                    throw new InvalidOperationException("Credenziali SAP B1 non configurate");
+                }
+
                 var loginData = new
                 {
                     CompanyDB = _configuration["SapB1:CompanyDB"],
@@ -175,14 +181,11 @@ namespace SGS.Projects.Api.Services
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || 
                     response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
-                    var userKey = GetCurrentTokenJti();
+                    var userKey = GetCurrentTokenJti() ?? ServiceAccountCacheKey;
                     _logger.LogWarning("API call failed with unauthorized status, attempting to reconnect for user {UserKey}", userKey);
-                    if (!string.IsNullOrEmpty(userKey))
-                    {
-                        InvalidateSessionLocal(userKey);
-                        await GetSessionIdAsync();
-                        response = await apiCall();
-                    }
+                    InvalidateSessionLocal(userKey);
+                    await GetSessionIdAsync();
+                    response = await apiCall();
                     
                 }
                 

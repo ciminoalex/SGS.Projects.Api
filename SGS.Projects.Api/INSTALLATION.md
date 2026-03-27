@@ -247,11 +247,51 @@ Punta IIS alla cartella `publish`.
   - Startup: Automatic; Imposta variabili d’ambiente nella scheda `Environment`.
 - Con `sc.exe` (solo self-contained EXE):
 ```powershell
- sc create SGS.Projects.Api binPath= "C:\Services\SGS.Projects.Api\SGS.Projects.Api.exe" start= auto
- sc start SGS.Projects.Api
+ sc.exe create SGS.Projects.Api binPath= "C:\Services\SGS.Projects.Api\SGS.Projects.Api.exe" start= auto
+ sc.exe start SGS.Projects.Api
 ```
-3. Log on account: usa un account con permessi minimi e accesso ai driver ODBC.
-4. Controlla i log (Event Viewer > Windows Logs > Application).
+3. Configura HTTPS per il servizio (senza dev-cert) con certificato self-signed in `LocalMachine`:
+```powershell
+# PowerShell come Amministratore
+$cert = New-SelfSignedCertificate `
+  -DnsName "localhost",$env:COMPUTERNAME `
+  -CertStoreLocation "Cert:\LocalMachine\My" `
+  -FriendlyName "SGS.Projects.Api SelfSigned" `
+  -NotAfter (Get-Date).AddYears(2) `
+  -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256
+
+$pwd = ConvertTo-SecureString "CHANGE_ME_STRONG_PASSWORD" -AsPlainText -Force
+Export-PfxCertificate -Cert $cert -FilePath "C:\Services\SGS.Projects.Api\sgs-api-https.pfx" -Password $pwd
+```
+4. In `C:\Services\SGS.Projects.Api\appsettings.json` configura Kestrel HTTPS con PFX esplicito:
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://+:7226",
+        "Certificate": {
+          "Path": "C:\\Services\\SGS.Projects.Api\\sgs-api-https.pfx",
+          "Password": "CHANGE_ME_STRONG_PASSWORD"
+        }
+      }
+    }
+  }
+}
+```
+5. (Consigliato) importa il `.cer` in `LocalMachine\Root` per evitare warning TLS sui client interni:
+```powershell
+Export-Certificate -Cert $cert -FilePath "C:\Services\SGS.Projects.Api\sgs-api-self.cer"
+Import-Certificate -FilePath "C:\Services\SGS.Projects.Api\sgs-api-self.cer" -CertStoreLocation "Cert:\LocalMachine\Root"
+```
+6. Log on account: usa un account con permessi minimi e accesso ai driver ODBC.
+7. Riavvia e verifica:
+```powershell
+sc.exe start SGS.Projects.Api
+sc.exe queryex SGS.Projects.Api
+netstat -ano | findstr :7226
+```
+8. Controlla i log (Event Viewer > Windows Logs > Application).
 
 ### 5) ODBC verso SAP HANA e SQL Server
 - Il codice usa direttamente connection string ODBC; non è necessario creare DSN, ma assicurati che:
@@ -284,6 +324,10 @@ Imposta livelli di log:
 
 ### 9) Troubleshooting specifico
 - "SSL certificate validation bypassed" nei log: indica che è attivo il bypass SSL. Installare CA corrette o rimuovere il bypass in `Program.cs`.
+- Errore servizio Windows `1067` con messaggio ".NET Runtime 1026: Unable to configure HTTPS endpoint":
+  - il servizio non può usare il developer certificate dell'utente interattivo;
+  - configura un certificato esplicito in `Kestrel:Endpoints:Https:Certificate` (PFX consigliato);
+  - controlla eventuali override globali: `ASPNETCORE_URLS` in `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment` può forzare endpoint inattesi.
 - "Driver not found": controlla versione/architettura del driver ODBC.
 - "Login failed Service Layer": conferma `SapB1:CompanyDB`, `UserName`, `Password` e raggiungibilità dell’URL.
 - Timeouts/401 dal Service Layer: il servizio gestisce il retry; controlla scadenza sessione e orologi NTP.
