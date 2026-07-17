@@ -6,22 +6,27 @@ using System.Security.Claims;
 
 namespace AX.SAPB1.Api.Services
 {
-    public class DbOdbcService : IDbOdbcService
+    /// <summary>
+    /// Accesso ODBC diretto a SAP B1 su HANA. La contabilità generale — lettura del conto economico e
+    /// scrittura dell'attribuzione analitica — vive nella partial <c>DbOdbcService.Gl.cs</c>.
+    /// </summary>
+    public partial class DbOdbcService : IDbOdbcService
     {
         private readonly string _connectionString;
         private readonly string _schema;
+        private readonly IConfiguration _configuration;
         private readonly ILogger<DbOdbcService> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
         public DbOdbcService(IConfiguration configuration, ILogger<DbOdbcService> logger, IHttpContextAccessor httpContextAccessor)
         {
-            _connectionString = configuration.GetConnectionString("DefaultDatabase") 
+            _connectionString = configuration.GetConnectionString("DefaultDatabase")
                 ?? throw new ArgumentNullException(nameof(configuration), "DefaultDatabase connection string not found");
 
             _schema = configuration["SapB1:CompanyDB"]
                 ?? throw new ArgumentNullException(nameof(configuration), "Schema not defined");
 
-
+            _configuration = configuration;
             _logger = logger;
             _httpContextAccessor = httpContextAccessor;
         }

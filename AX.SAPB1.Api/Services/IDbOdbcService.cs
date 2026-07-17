@@ -37,5 +37,25 @@ namespace AX.SAPB1.Api.Services
         /// AX.360 indicato nell'UDF di correlazione. Usato per evitare doppioni in fase di push.
         /// </summary>
         Task<ExistingErpDocument?> FindDocumentByCorrelationIdAsync(string ax360InvoiceId);
+
+        // ── Contabilità generale (lettura) ────────────────────────────────────
+        // Nota: distinta da GetLedgerAsync, che è il PARTITARIO CLIENTI (scadenzario/esposizione).
+        // Questi metodi leggono il conto economico riga per riga: sono cose diverse, il nome inganna.
+
+        Task<IEnumerable<GlAccountDto>> GetGlAccountsAsync();
+        Task<IEnumerable<GlFiscalPeriodDto>> GetGlFiscalPeriodsAsync();
+        Task<IEnumerable<GlFiscalProjectDto>> GetGlFiscalProjectsAsync();
+        Task<IEnumerable<GlDimensionDto>> GetGlDimensionsAsync();
+        Task<IEnumerable<GlDistributionRuleDto>> GetGlDistributionRulesAsync();
+        Task<IEnumerable<GlLineDto>> GetGlLinesAsync(DateTime from, DateTime to);
+        Task<IEnumerable<GlLineDto>> GetGlLinesByEntryIdsAsync(IReadOnlyCollection<int> entryIds);
+
+        // ── Contabilità generale (scrittura) ──────────────────────────────────
+
+        /// <summary>
+        /// Aggiorna progetto e dimensioni analitiche sulle righe contabili indicate, in una sola
+        /// transazione. È l'UNICO write path SQL del servizio: tutto il resto passa dal Service Layer.
+        /// </summary>
+        Task<GlAttributionResult> UpdateGlAttributionAsync(GlAttributionRequest request);
     }
 }
