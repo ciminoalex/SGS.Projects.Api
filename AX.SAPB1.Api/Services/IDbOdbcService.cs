@@ -50,6 +50,9 @@ namespace AX.SAPB1.Api.Services
         Task<IEnumerable<GlLineDto>> GetGlLinesAsync(DateTime from, DateTime to);
         Task<IEnumerable<GlLineDto>> GetGlLinesByEntryIdsAsync(IReadOnlyCollection<int> entryIds);
 
+        /// <summary>Fattura/NC di origine (testata + righe prodotti) di una registrazione JDT1, per l'anteprima. Null se il tipo non ha un documento con righe.</summary>
+        Task<ErpInvoiceDto?> GetSourceDocumentAsync(int transId, string? docType);
+
         // ── Contabilità generale (scrittura) ──────────────────────────────────
 
         /// <summary>

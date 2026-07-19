@@ -291,6 +291,87 @@ namespace AX.SAPB1.Api.Services
             return result;
         }
 
+        /// <summary>
+        /// Fattura (o nota di credito) di ORIGINE di una registrazione JDT1, per l'anteprima nella
+        /// riconciliazione: dalla descrizione del conto non sempre si capisce cosa si è comprato o venduto,
+        /// le RIGHE del documento sì. Chiave robusta e univoca: <c>OINV/OPCH/ORIN/ORPC."TransId"</c> =
+        /// <c>OJDT."TransId"</c> (= l'id registrazione del portale). Sola lettura. Ritorna null se il tipo
+        /// non ha un documento d'origine con righe (giornali manuali, pagamenti) o se non c'è testata.
+        /// </summary>
+        public async Task<ErpInvoiceDto?> GetSourceDocumentAsync(int transId, string? docType)
+        {
+            var tables = MapSourceDocTables(docType);
+            if (tables is null) return null;
+            var (headerTable, lineTable) = tables.Value;
+
+            using var connection = await CreateOpenConnectionAsync();
+
+            var invoice = new ErpInvoiceDto
+            {
+                DocType = docType!,
+                IsCreditNote = docType is GlSourceDocType.SalesCreditNote or GlSourceDocType.PurchaseCreditNote,
+            };
+            int docEntry;
+
+            // Testata via TransId (univoco su tutto il giornale). Le 4 tabelle condividono queste colonne.
+            var headerSql = $@"
+                SELECT ""DocEntry"", ""DocNum"", ""CardCode"", ""DocDate"", ""DocCur"", ""DocTotal"", ""VatSum""
+                FROM ""{_schema}"".""{headerTable}""
+                WHERE ""TransId"" = ?";
+            using (var headerCmd = new OdbcCommand(headerSql, connection))
+            {
+                headerCmd.Parameters.AddWithValue("@TransId", transId);
+                using var hr = await headerCmd.ExecuteReaderAsync();
+                if (!await hr.ReadAsync()) return null;   // nessun documento d'origine per questo TransId
+                docEntry = Convert.ToInt32(hr.GetValue(0));
+                invoice.ErpDocId = docEntry.ToString();
+                invoice.ErpDocNumber = hr.IsDBNull(1) ? string.Empty : (Convert.ToString(hr.GetValue(1)) ?? string.Empty);
+                invoice.ErpCustomerCode = hr.IsDBNull(2) ? null : hr.GetString(2);
+                invoice.IssueDate = hr.IsDBNull(3) ? null : hr.GetDateTime(3);
+                invoice.Currency = hr.IsDBNull(4) || hr.GetString(4).Length == 0 ? "EUR" : hr.GetString(4);
+                invoice.TotalAmount = hr.IsDBNull(5) ? 0m : hr.GetDecimal(5);
+                invoice.VatAmount = hr.IsDBNull(6) ? 0m : hr.GetDecimal(6);
+                invoice.TaxableAmount = invoice.TotalAmount - invoice.VatAmount;
+            }
+
+            // Righe (prodotti/servizi) via DocEntry. INV1/PCH1/RIN1/RPC1 condividono queste colonne.
+            var lineSql = $@"
+                SELECT ""LineNum"", ""ItemCode"", ""Dscription"", ""Quantity"", ""Price"", ""LineTotal"", ""VatPrcnt""
+                FROM ""{_schema}"".""{lineTable}""
+                WHERE ""DocEntry"" = ?
+                ORDER BY ""LineNum""";
+            using (var lineCmd = new OdbcCommand(lineSql, connection))
+            {
+                lineCmd.Parameters.AddWithValue("@DocEntry", docEntry);
+                using var lr = await lineCmd.ExecuteReaderAsync();
+                while (await lr.ReadAsync())
+                {
+                    invoice.Lines.Add(new ErpInvoiceLineDto
+                    {
+                        SortOrder = lr.IsDBNull(0) ? 0 : Convert.ToInt32(lr.GetValue(0)),
+                        ErpItemCode = lr.IsDBNull(1) || lr.GetString(1).Length == 0 ? null : lr.GetString(1),
+                        Description = lr.IsDBNull(2) ? string.Empty : lr.GetString(2),
+                        Quantity = lr.IsDBNull(3) ? 0m : lr.GetDecimal(3),
+                        UnitPrice = lr.IsDBNull(4) ? 0m : lr.GetDecimal(4),
+                        LineTotal = lr.IsDBNull(5) ? 0m : lr.GetDecimal(5),
+                        VatRate = lr.IsDBNull(6) ? 0m : lr.GetDecimal(6),
+                    });
+                }
+            }
+
+            return invoice;
+        }
+
+        /// <summary>Tipo documento neutro → (testata, righe) SAP. Solo fatture e note di credito hanno righe da mostrare.</summary>
+        private static (string header, string line)? MapSourceDocTables(string? docType) => docType switch
+        {
+            GlSourceDocType.SalesInvoice => ("OINV", "INV1"),
+            GlSourceDocType.PurchaseInvoice => ("OPCH", "PCH1"),
+            GlSourceDocType.SalesCreditNote => ("ORIN", "RIN1"),
+            GlSourceDocType.PurchaseCreditNote => ("ORPC", "RPC1"),
+            _ => null,
+        };
+
         // ─────────────────────────────────────────────────────────────────────
         // Scrittura
         // ─────────────────────────────────────────────────────────────────────

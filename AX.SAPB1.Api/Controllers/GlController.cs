@@ -37,6 +37,28 @@ namespace AX.SAPB1.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Fattura/NC di origine di una registrazione JDT1, per l'anteprima nella riconciliazione del portale:
+        /// dalla descrizione del conto non sempre si capisce cosa si è comprato/venduto, le righe del
+        /// documento sì. <paramref name="docType"/> è il tipo neutro (fattura_vendita/…), decide la tabella.
+        /// 204 se non c'è un documento con righe (giornale manuale, pagamento) o non esiste.
+        /// </summary>
+        [HttpGet("source-document")]
+        public async Task<ActionResult<ErpInvoiceDto>> GetSourceDocument([FromQuery] int transId, [FromQuery] string? docType)
+        {
+            if (transId <= 0) return BadRequest("Parametro 'transId' obbligatorio.");
+            try
+            {
+                var doc = await _db.GetSourceDocumentAsync(transId, docType);
+                return doc == null ? NotFound() : Ok(doc);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Errore nel recupero della fattura di origine (transId {TransId}, docType {DocType}).", transId, docType);
+                return StatusCode(500, "Errore interno durante il recupero della fattura di origine");
+            }
+        }
+
         /// <summary>Periodi contabili: definiscono l'anno fiscale e quali periodi sono aperti.</summary>
         [HttpGet("periods")]
         public async Task<ActionResult<IEnumerable<GlFiscalPeriodDto>>> GetPeriods()
