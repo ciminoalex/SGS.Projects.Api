@@ -1,4 +1,5 @@
 using System.Data.Odbc;
+using System.Globalization;
 using AX.SAPB1.Api.Models;
 using Microsoft.AspNetCore.Http;
 using System.IdentityModel.Tokens.Jwt;
@@ -953,13 +954,22 @@ namespace AX.SAPB1.Api.Services
                 // Read from common JWT claims to handle mapping differences
                 var principal = _httpContextAccessor.HttpContext?.User;
                 var jti = principal?.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;
-                var userName =
-                    principal?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
-                    ?? principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                    ?? principal?.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value
-                    ?? principal?.Claims.FirstOrDefault(c => c.Type == "unique_name")?.Value
-                    ?? principal?.FindFirst(ClaimTypes.Name)?.Value;
-                _logger.LogDebug("GetResourcesAsync principal resolved: sub/name={User}, jti={Jti}", userName ?? "", jti ?? "");
+
+                // Chiamante machine-to-machine (header X-Api-Key, es. il portale AX.360): il principal non
+                // rappresenta un utente SAP, quindi il suo nome ("ax360-erp") non e' un OUSR.USER_CODE e
+                // filtrare su di esso restituirebbe SEMPRE zero risorse. Va trattato come "nessun utente",
+                // cioe' elenco completo delle risorse attive: e' il consumer che sceglie a chi abbinarle.
+                var isMachineClient = string.Equals(
+                    principal?.FindFirst("client_type")?.Value, "api_key", StringComparison.OrdinalIgnoreCase);
+
+                var userName = isMachineClient
+                    ? null
+                    : (principal?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                       ?? principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                       ?? principal?.Claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value
+                       ?? principal?.Claims.FirstOrDefault(c => c.Type == "unique_name")?.Value
+                       ?? principal?.FindFirst(ClaimTypes.Name)?.Value);
+                _logger.LogDebug("GetResourcesAsync principal resolved: sub/name={User}, jti={Jti}, machineClient={Machine}", userName ?? "", jti ?? "", isMachineClient);
                 var query = $@"
                     SELECT DISTINCT
                         T0.""ResCode"" AS ""Code"",
@@ -979,8 +989,10 @@ namespace AX.SAPB1.Api.Services
                 command.Connection = connection;
                 if (string.IsNullOrWhiteSpace(userName))
                 {
-                    // Auth disabilitata o token non disponibile: restituisce tutte le risorse attive.
-                    _logger.LogInformation("GetResourcesAsync: missing JWT user claim, returning all active resources");
+                    // Client M2M, auth disabilitata o token non disponibile: tutte le risorse attive.
+                    _logger.LogInformation(
+                        "GetResourcesAsync: nessun utente SAP nel contesto (machineClient={Machine}), restituisco tutte le risorse attive",
+                        isMachineClient);
                     command.CommandText = query + @" ORDER BY T0.""ResName""";
                 }
                 else
@@ -1284,12 +1296,17 @@ namespace AX.SAPB1.Api.Services
                 var whereClause = "WHERE " + string.Join(" AND ", conditions);
 
                 // JDT1 = righe di registrazione contabile; OJDT = testata (TransType per classificazione).
+                // JDT1."ShortName" vale il CardCode sulle righe di business partner ma il codice CONTO su
+                // quelle di contabilita': senza il join su OCRD questo endpoint restituirebbe l'intero libro
+                // giornale (157k righe su MTF contro 15k di partitario clienti), che il consumer scarta
+                // comunque non trovando il cliente. Qui si serve il partitario CLIENTI, come da contratto.
                 var query = $@"
                     SELECT
                         J.""ShortName"", J.""TransId"", J.""Ref1"", J.""RefDate"", J.""DueDate"",
                         J.""Debit"", J.""Credit"", J.""LineMemo"", H.""TransType""
                     FROM ""{_schema}"".""JDT1"" J
                     INNER JOIN ""{_schema}"".""OJDT"" H ON H.""TransId"" = J.""TransId""
+                    INNER JOIN ""{_schema}"".""OCRD"" C ON C.""CardCode"" = J.""ShortName"" AND C.""CardType"" = 'C'
                     {whereClause}
                     ORDER BY J.""ShortName"", J.""RefDate"", J.""TransId""";
 
@@ -1314,7 +1331,7 @@ namespace AX.SAPB1.Api.Services
                         ErpDocNumber = reader.IsDBNull(2) ? (reader.IsDBNull(1) ? string.Empty : reader.GetInt32(1).ToString()) : reader.GetString(2),
                         EntryDate = reader.IsDBNull(3) ? default : reader.GetDateTime(3),
                         DueDate = reader.IsDBNull(4) ? null : reader.GetDateTime(4),
-                        DocType = MapLedgerDocType(reader.IsDBNull(8) ? (int?)null : reader.GetInt32(8)),
+                        DocType = MapLedgerDocType(ReadNullableInt(reader, 8)),
                         Description = reader.IsDBNull(7) ? null : reader.GetString(7),
                         Currency = "EUR",
                         Debit = debit,
@@ -1371,6 +1388,29 @@ namespace AX.SAPB1.Api.Services
         }
 
         private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+        /// <summary>
+        /// Legge un intero da una colonna il cui tipo HANA non e' garantito numerico.
+        /// Serve per OJDT."TransType", che su HANA e' NVARCHAR(20) con valori "13"/"24"/"-2":
+        /// <c>GetInt32</c> ci lanciava InvalidCastException facendo fallire l'intero partitario.
+        /// Tollera anche INTEGER/SMALLINT, cosi' regge differenze di schema tra company.
+        /// </summary>
+        private static int? ReadNullableInt(System.Data.Common.DbDataReader reader, int ordinal)
+        {
+            if (reader.IsDBNull(ordinal)) return null;
+            var raw = reader.GetValue(ordinal);
+            return raw switch
+            {
+                int i => i,
+                short s => s,
+                long l => (int)l,
+                decimal d => (int)d,
+                _ => int.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture)?.Trim(),
+                        NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                     ? parsed
+                     : null,
+            };
+        }
 
         private static string MapLedgerDocType(int? transType) => transType switch
         {
